@@ -18,6 +18,7 @@
   <script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.3/lib/browser.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.6/dist/JsBarcode.all.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/bwip-js@4.3.0/dist/bwip-js-min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js"></script>
 
   <style>
     :root {
@@ -159,11 +160,18 @@
     <div id="reader"></div>
     <!-- Zone cachée nécessaire pour le scan de photo (html5-qrcode exige un élément) -->
     <div id="photo-scan" style="display:none"></div>
-    <button id="start-btn">▒ Démarrer la caméra</button>
+    <button id="start-btn">▶ Démarrer la caméra</button>
     <button class="secondary" id="stop-btn" style="display:none">⏹ Arrêter la caméra</button>
     <button class="secondary" id="flash-btn" style="display:none">🔦 Flash : auto</button>
+    <div id="zoom-row" style="display:none;margin-top:8px">
+      <button class="secondary" id="zoom-out-btn" style="margin:0 4px 0 0">➖ Zoom</button>
+      <button class="secondary" id="zoom-in-btn" style="margin:0">➕ Zoom</button>
+    </div>
+    <button class="secondary" id="ocr-btn">🔎 Lire le texte à côté du code (OCR)</button>
     <button class="secondary" id="photo-btn">📸 Scanner depuis une photo</button>
     <input type="file" id="photo-input" accept="image/*" capture="environment" style="display:none" />
+    <input type="file" id="photo-ocr-input" accept="image/*" capture="environment" style="display:none" />
+    <div class="hint" id="ocr-status" style="display:none"></div>
   </div>
 
   <!-- NFC SMART DATA -->
@@ -241,6 +249,109 @@
     let history = JSON.parse(localStorage.getItem("gscan-history") || "[]");
     let torchMode = localStorage.getItem("gscan-torch") || "auto";
     let torchTrack = null;
+    let zoomTrack = null;
+    let zoomLevel = 0;
+    let ocrWorker = null;
+    let ocrBusy = false;
+
+    // ===== OCR (type Google Lens) =====
+    const ocrCandidates = [
+      /[A-Z]{2}\d{9}[A-Z]{2}/g,                          // n° postal (ex. RA123456789FR)
+      /\d[A-Z]\s?\d{3}\s?\d{3}\s?\d{3}/g,           // colis Chronopost/DPD
+      /\bSD\d{6,}/gi,                                   // SD (Smart Data)
+      /\b[A-Z0-9]{10,}\b/g                              // alphanumérique long
+    ];
+
+    function extractTrackingNumbers(text) {
+      const found = new Set();
+      for (const re of ocrCandidates) {
+        const m = text.match(re);
+        if (m) m.forEach(x => { if (/\d/.test(x)) found.add(x.trim()); });
+      }
+      const list = [...found].sort((a, b) => b.length - a.length);
+      // dédup : retire les sous-chaînes déjà couvertes
+      return list.filter((s, i) => !list.slice(0, i).some(big => big.includes(s)));
+    }
+
+    async function runOcr(imageLike, label) {
+      if (ocrBusy || typeof Tesseract === "undefined") return;
+      ocrBusy = true;
+      showOcrProgress(label);
+      try {
+        if (!ocrWorker) ocrWorker = await Tesseract.createWorker("eng");
+        const { data } = await ocrWorker.recognize(imageLike);
+        const text = (data && data.text) ? data.text : "";
+        const nums = extractTrackingNumbers(text.replace(/\s+/g, " "));
+        if (nums.length > 0) {
+          showResult(nums[0], "qr");
+        } else if (text.trim().length > 3) {
+          const best = text.trim().split(/\n/).filter(l => l.trim().length > 3)[0];
+          showResult(best || text.trim(), "qr");
+        } else {
+          alert("Aucun texte lisible détecté.\nEssaie une photo plus nette et mieux cadrée.");
+        }
+      } catch (err) {
+        alert("Erreur OCR : " + err);
+      } finally {
+        ocrBusy = false;
+        document.getElementById("ocr-status").style.display = "none";
+      }
+    }
+
+    function showOcrProgress(label) {
+      const st = document.getElementById("ocr-status");
+      st.style.display = "block";
+      st.textContent = "⏳ " + label + " — analyse OCR en cours (1re fois : téléchargement du moteur, ~10 Mo)…";
+    }
+
+    async function ocrFromCamera() {
+      const video = document.querySelector("#reader video");
+      if (!video || !video.videoWidth) {
+        // fallback : demander une photo si la caméra n'est pas lancée
+        document.getElementById("photo-ocr-input").value = "";
+        document.getElementById("photo-ocr-input").click();
+        return;
+      }
+      const canvas = document.createElement("canvas");
+      canvas.width = video.videoWidth;
+      canvas.height = video.videoHeight;
+      canvas.getContext("2d").drawImage(video, 0, 0);
+      await runOcr(canvas, "Image caméra");
+    }
+
+    function cropCanvas(canvas, x, y, w, h) {
+      const c = document.createElement("canvas");
+      c.width = w; c.height = h;
+      c.getContext("2d").drawImage(canvas, x, y, w, h, 0, 0, w, h);
+      return c;
+    }
+
+    async function ocrFromPhoto(file) {
+      const bitmap = await createImageBitmap(file);
+      const canvas = document.createElement("canvas");
+      canvas.width = bitmap.width;
+      canvas.height = bitmap.height;
+      canvas.getContext("2d").drawImage(bitmap, 0, 0);
+      const W = canvas.width, H = canvas.height;
+      const crops = [
+        canvas,
+        cropCanvas(canvas, 0, Math.floor(H / 2), W, Math.floor(H / 2)),
+        cropCanvas(canvas, 0, 0, W, Math.floor(H / 2)),
+        cropCanvas(canvas, 0, Math.floor(H / 4), W, Math.floor(H / 2))
+      ];
+      for (const c of crops) {
+        await ocrWorkerReady();
+        const { data } = await ocrWorker.recognize(c);
+        const nums = extractTrackingNumbers(((data && data.text) || "").replace(/\s+/g, " "));
+        if (nums.length > 0) { document.getElementById("ocr-status").style.display = "none"; showResult(nums[0], "qr"); return; }
+      }
+      document.getElementById("ocr-status").style.display = "none";
+      alert("Aucun texte ni numéro de suivi détecté sur la photo.\nEssaie une photo plus nette.");
+    }
+
+    async function ocrWorkerReady() {
+      if (!ocrWorker) ocrWorker = await Tesseract.createWorker("eng");
+    }
     let torchAutoTimer = null;
     let nfcActive = false;
 
@@ -323,8 +434,29 @@
       try {
         await html5QrCode.start(
           { facingMode: "environment" },
-          { fps: 10, qrbox: { width: 250, height: 250 } },
+          {
+            fps: 10,
+            qrbox: { width: 280, height: 200 },
+            aspectRatio: 1.4,
+            formatsToSupport: [
+              Html5QrcodeSupportedFormats.QR_CODE,
+              Html5QrcodeSupportedFormats.EAN_13,
+              Html5QrcodeSupportedFormats.EAN_8,
+              Html5QrcodeSupportedFormats.UPC_A,
+              Html5QrcodeSupportedFormats.UPC_E,
+              Html5QrcodeSupportedFormats.CODE_39,
+              Html5QrcodeSupportedFormats.CODE_93,
+              Html5QrcodeSupportedFormats.CODE_128,
+              Html5QrcodeSupportedFormats.CODABAR,
+              Html5QrcodeSupportedFormats.ITF,
+              Html5QrcodeSupportedFormats.ITF_14,
+              Html5QrcodeSupportedFormats.DATA_MATRIX,
+              Html5QrcodeSupportedFormats.AZTEC,
+              Html5QrcodeSupportedFormats.PDF_417
+            ].filter(Boolean)
+          },
           (decoded) => {
+            if (navigator.vibrate) navigator.vibrate(150);
             showResult(decoded);
             html5QrCode.stop().then(() => {
               document.getElementById("stop-btn").style.display = "none";
@@ -337,6 +469,7 @@
         const video = document.querySelector("#reader video");
         if (video && video.srcObject) torchTrack = video.srcObject.getVideoTracks()[0] || null;
         updateFlashBtn();
+        setupZoom(video);
       } catch (err) {
         alert("Impossible d'accéder à la caméra : " + err);
       }
@@ -425,10 +558,65 @@
         const result = await photoScanner.scanFile(file, true);
         showResult(result);
       } catch (err) {
-        alert("Aucun code trouvé dans l'image.\nEssaie avec une photo plus nette ou mieuĠcadrée.");
+        // Aucun code détecté : tenter une lecture OCR (type Google Lens)
+        try {
+          showOcrProgress("Photo sans code — analyse OCR");
+          await ocrFromPhoto(file);
+        } catch (e2) {
+          alert("Aucun code ni texte trouvé dans l'image.\nEssaie avec une photo plus nette ou mieux cadrée.");
+        }
       } finally {
         // On vide le champ après usage
         e.target.value = "";
+      }
+    };
+
+    // ===== Zoom =====
+    function setupZoom(video) {
+      const track = video && video.srcObject ? video.srcObject.getVideoTracks()[0] : null;
+      if (!track) return;
+      let caps = {};
+      try { caps = track.getCapabilities() || {}; } catch (e) {}
+      if (!caps.zoom) { document.getElementById("zoom-row").style.display = "none"; return; }
+      zoomTrack = track;
+      zoomLevel = Math.min(caps.zoom.max, Math.max(caps.zoom.min, (caps.zoom.min + caps.zoom.max) / 2));
+      applyZoom();
+      document.getElementById("zoom-row").style.display = "flex";
+    }
+
+    function applyZoom() {
+      if (!zoomTrack) return;
+      try {
+        zoomTrack.applyConstraints({ advanced: [{ zoom: zoomLevel }] }).catch(() => {});
+      } catch (e) {}
+    }
+
+    document.getElementById("zoom-in-btn").onclick = () => {
+      if (!zoomTrack) return;
+      const caps = zoomTrack.getCapabilities();
+      zoomLevel = Math.min(caps.zoom.max, zoomLevel + (caps.zoom.step || 50));
+      applyZoom();
+    };
+
+    document.getElementById("zoom-out-btn").onclick = () => {
+      if (!zoomTrack) return;
+      const caps = zoomTrack.getCapabilities();
+      zoomLevel = Math.max(caps.zoom.min, zoomLevel - (caps.zoom.step || 50));
+      applyZoom();
+    };
+
+    // ===== OCR =====
+    document.getElementById("ocr-btn").onclick = () => ocrFromCamera();
+    document.getElementById("photo-ocr-input").onchange = async (e) => {
+      const file = e.target.files[0];
+      if (!file) return;
+      e.target.value = "";
+      try {
+        showOcrProgress("Photo — analyse OCR");
+        await ocrFromPhoto(file);
+      } catch (err) {
+        document.getElementById("ocr-status").style.display = "none";
+        alert("Erreur OCR : " + err);
       }
     };
 
@@ -584,5 +772,6 @@
     // Init
     renderHistory();
   </script>
+<script type="module" src="https://static.cloudflareinsights.com/beacon.min.js/v4bc70e2c01a94c73b74392e4234840661791215815920" integrity="sha512-L0ha0OXavK/8okipN9F8BtP84dg9DUhPERbBXzwI6dgTA55d2+yweo3pn5CSFYs45/r8md2+xvUPtTdvTNRfjA==" nonce="a7XjMil2/T6N13u9fRqvnA==" data-cf-beacon='{"version":"2024.11.0","token":"36b4216ae2dc4d5488c249161e71fe1e","spa":2}' crossorigin="anonymous"></script>
 </body>
 </html>
