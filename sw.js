@@ -1,5 +1,5 @@
-// Service worker — G-scan-qrcode V3
-const CACHE = 'g-scan-qrcode-v3';
+// Service worker — G-scan-qrcode V4
+const CACHE = 'g-scan-qrcode-v4';
 const ASSETS = ['./', './index.html', './manifest.json', './icon-192.png'];
 
 self.addEventListener('install', (e) => {

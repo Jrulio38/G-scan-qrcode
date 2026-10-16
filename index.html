@@ -9,6 +9,8 @@
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <link rel="manifest" href="manifest.json" />
+  
+  <!-- Favicon en data-URI (plus besoin de fichier externe) -->
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='22' fill='%237c3aed'/><text y='68' x='50' text-anchor='middle' font-size='52' font-weight='800' fill='white' font-family='system-ui'>G</text></svg>" />
 
   <!-- Bibliothèques -->
@@ -39,59 +41,112 @@
       line-height: 1.45;
     }
     h1 {
-      font-size: 1.55rem; font-weight: 800; margin-bottom: 4px;
+      font-size: 1.55rem;
+      font-weight: 800;
+      margin-bottom: 4px;
       background: var(--accent);
-      -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
     }
     .subtitle { color: var(--muted); font-size: 0.9rem; margin-bottom: 20px; }
     .card {
-      background: var(--card); border: 1px solid var(--border);
-      border-radius: var(--radius); padding: 16px; margin-bottom: 14px;
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 16px;
+      margin-bottom: 14px;
       backdrop-filter: blur(12px);
     }
     button {
-      width: 100%; padding: 14px 18px; border: none; border-radius: 14px;
-      font-size: 1rem; font-weight: 700; cursor: pointer; color: white;
-      background: var(--accent); transition: transform 0.1s, opacity 0.15s;
+      width: 100%;
+      padding: 14px 18px;
+      border: none;
+      border-radius: 14px;
+      font-size: 1rem;
+      font-weight: 700;
+      cursor: pointer;
+      color: white;
+      background: var(--accent);
+      transition: transform 0.1s, opacity 0.15s;
     }
     button:active { transform: scale(0.98); }
-    button.secondary { background: rgba(255,255,255,0.07); border: 1px solid var(--border); margin-top: 8px; }
+    button.secondary {
+      background: rgba(255,255,255,0.07);
+      border: 1px solid var(--border);
+      margin-top: 8px;
+    }
     input, select, textarea {
-      width: 100%; padding: 13px 14px; border-radius: 12px;
-      border: 1px solid var(--border); background: rgba(0,0,0,0.3);
-      color: var(--text); font-size: 1rem; margin-top: 8px;
+      width: 100%;
+      padding: 13px 14px;
+      border-radius: 12px;
+      border: 1px solid var(--border);
+      background: rgba(0,0,0,0.3);
+      color: var(--text);
+      font-size: 1rem;
+      margin-top: 8px;
     }
     input:focus, select:focus { outline: 2px solid #7c3aed; border-color: transparent; }
-    #reader { width: 100%; border-radius: 14px; overflow: hidden; background: #000; margin-bottom: 12px; }
-    .flash-btn {
-      margin-top: 8px; width: 100%; padding: 12px; border: none; border-radius: 12px;
-      font-size: 0.95rem; font-weight: 700; color: white; background: #ea580c; cursor: pointer;
+    #reader {
+      width: 100%;
+      border-radius: 14px;
+      overflow: hidden;
+      background: #000;
+      margin-bottom: 12px;
     }
-    .flash-btn.off { background: #dc2626; }
-    .flash-btn.on { background: #16a34a; }
-    .flash-btn.auto { background: #ea580c; }
-    .flash-btn.disabled { background: #52525b; cursor: not-allowed; }
     .tabs { display: flex; gap: 6px; margin: 12px 0; }
-    .tabs button { flex: 1; padding: 10px; font-size: 0.85rem; background: rgba(255,255,255,0.06); }
+    .tabs button {
+      flex: 1;
+      padding: 10px;
+      font-size: 0.9rem;
+      background: rgba(255,255,255,0.06);
+    }
     .tabs button.active { background: var(--accent); }
     #result-area { display: none; text-align: center; }
     #result-value {
-      font-size: 1.25rem; font-weight: 700; word-break: break-all; margin: 12px 0;
+      font-size: 1.25rem;
+      font-weight: 700;
+      word-break: break-all;
+      margin: 12px 0;
       background: var(--accent);
-      -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
     }
-    #repair-note { display: none; font-size: 0.9rem; margin-top: 4px; font-weight: 700; }
-    #nfc-status { font-size: 0.9rem; margin-top: 8px; display: none; word-break: break-all; }
-    #output { background: white; border-radius: 12px; padding: 12px; margin: 12px 0; display: inline-block; }
+    #output {
+      background: white;
+      border-radius: 12px;
+      padding: 12px;
+      margin: 12px 0;
+      display: inline-block;
+    }
     #output canvas, #output svg { max-width: 100%; height: auto; }
     .history-item {
-      display: flex; justify-content: space-between; align-items: center;
-      padding: 10px 0; border-bottom: 1px solid var(--border); font-size: 0.95rem;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 10px 0;
+      border-bottom: 1px solid var(--border);
+      font-size: 0.95rem;
     }
-    .history-item button { width: auto; padding: 6px 12px; font-size: 0.8rem; }
+    .history-item button {
+      width: auto;
+      padding: 6px 12px;
+      font-size: 0.8rem;
+    }
     .hint { color: var(--muted); font-size: 0.85rem; margin-top: 8px; }
-    .color-row { display: flex; align-items: center; gap: 10px; margin: 10px 0; }
-    input[type="color"] { width: 48px; height: 36px; padding: 2px; border: none; background: none; }
+    .color-row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin: 10px 0;
+    }
+    input[type="color"] {
+      width: 48px;
+      height: 36px;
+      padding: 2px;
+      border: none;
+      background: none;
+    }
   </style>
 </head>
 <body>
@@ -102,10 +157,11 @@
   <!-- SCAN -->
   <div class="card">
     <div id="reader"></div>
+    <!-- Zone cachée nécessaire pour le scan de photo (html5-qrcode exige un élément) -->
     <div id="photo-scan" style="display:none"></div>
-    <button id="start-btn">▶ Démarrer la caméra</button>
+    <button id="start-btn">▒ Démarrer la caméra</button>
     <button class="secondary" id="stop-btn" style="display:none">⏹ Arrêter la caméra</button>
-    <button class="flash-btn auto" id="flash-btn" style="display:none">🔦 Flash : auto</button>
+    <button class="secondary" id="flash-btn" style="display:none">🔦 Flash : auto</button>
     <button class="secondary" id="photo-btn">📸 Scanner depuis une photo</button>
     <input type="file" id="photo-input" accept="image/*" capture="environment" style="display:none" />
   </div>
@@ -113,10 +169,9 @@
   <!-- NFC SMART DATA -->
   <div class="card">
     <strong>Smart Data — puce NFC</strong>
-    <p class="hint" style="margin-top:4px">Lire ou écrire les données d'une puce NFC (téléphone Android / Chrome).</p>
     <button class="secondary" id="nfc-read-btn">📡 Lire une puce NFC</button>
     <button class="secondary" id="nfc-write-btn">✍️ Écrire le code actuel sur la puce</button>
-    <div id="nfc-status" class="hint"></div>
+    <div id="nfc-status" class="hint" style="display:none"></div>
   </div>
 
   <!-- GENERATE -->
@@ -139,7 +194,7 @@
   <div class="card" id="result-area">
     <div class="hint">Code détecté / généré :</div>
     <div id="result-value"></div>
-    <div id="repair-note"></div>
+    <div id="repair-note" class="hint" style="display:none"></div>
 
     <div class="color-row">
       <span class="hint">Couleur :</span>
@@ -184,108 +239,76 @@
     let currentValue = "";
     let currentType = "qr";
     let history = JSON.parse(localStorage.getItem("gscan-history") || "[]");
-    let torchMode = localStorage.getItem("gscan-torch") || "auto"; // 'on' | 'off' | 'auto'
+    let torchMode = localStorage.getItem("gscan-torch") || "auto";
     let torchTrack = null;
     let torchAutoTimer = null;
     let nfcActive = false;
 
-    // ===== Utilitaires clés de contrôle (EAN / UPC) =====
-    function eanKey(digits, weightStarts3) {
+    function eanKey(digits, w3) {
       let sum = 0;
       for (let i = 0; i < digits.length; i++) {
-        const w = (i % 2 === 0) ? (weightStarts3 ? 3 : 1) : (weightStarts3 ? 1 : 3);
+        const w = (i % 2 === 0) ? (w3 ? 3 : 1) : (w3 ? 1 : 3);
         sum += Number(digits[i]) * w;
       }
       return String((10 - (sum % 10)) % 10);
     }
     function repairValue(v) {
-      // Ne touche qu'aux valeurs uniquement numériques
       if (!/^\d+$/.test(v)) return { value: v, note: "" };
       if (v.length === 13) {
         const key = eanKey(v.slice(0, 12), false);
         if (String(v[12]) === key) return { value: v, note: "✅ EAN-13 valide (clé vérifiée)" };
-        return { value: v.slice(0, 12) + key, note: "🔧 Clé EAN-13 corrigée automatiquement (" + v[12] + " → " + key + ")" };
+        return { value: v.slice(0, 12) + key, note: "🔧 Clé EAN-13 corrigée (" + v[12] + " → " + key + ")" };
       }
       if (v.length === 12) {
         const key = eanKey(v.slice(0, 11), true);
         if (String(v[11]) === key) return { value: v, note: "✅ UPC-A valide (clé vérifiée)" };
-        const k13 = eanKey(v, false);
-        return { value: v + k13, note: "🔧 Clé manquante : lu comme EAN-13, clé " + k13 + " ajoutée" };
+        return { value: v + eanKey(v, false), note: "🔧 Clé manquante : lu comme EAN-13" };
       }
-      if (v.length === 11) {
-        const k = eanKey(v, true);
-        return { value: v + k, note: "🔧 Clé UPC-A manquante : clé " + k + " ajoutée" };
-      }
+      if (v.length === 11) return { value: v + eanKey(v, true), note: "🔧 Clé UPC-A manquante ajoutée" };
       if (v.length === 8) {
         const key = eanKey(v.slice(0, 7), true);
         if (String(v[7]) === key) return { value: v, note: "✅ EAN-8 valide (clé vérifiée)" };
-        return { value: v.slice(0, 7) + key, note: "🔧 Clé EAN-8 corrigée automatiquement (" + v[7] + " → " + key + ")" };
+        return { value: v.slice(0, 7) + key, note: "🔧 Clé EAN-8 corrigée (" + v[7] + " → " + key + ")" };
       }
-      if (v.length === 7) {
-        const k = eanKey(v, true);
-        return { value: v + k, note: "🔧 Clé EAN-8 manquante : clé " + k + " ajoutée" };
-      }
-      // Numéros de suivi type colis (RR123456789FR, 1A 123 456 789 0...) : juste une info
+      if (v.length === 7) return { value: v + eanKey(v, true), note: "🔧 Clé EAN-8 manquante ajoutée" };
       if (/^[A-Z]{2}\d{9}[A-Z]{2}$/.test(v)) return { value: v, note: "📮 Numéro de suivi postal détecté" };
-      if (/^\d{11,15}$/.test(v)) return { value: v, note: "ℹ️ Longueur de code inhabituelle — vérifie la valeur" };
       return { value: v, note: "" };
     }
 
-    // ===== Lampe flash (torch) =====
-    function findTorchTrack() {
-      const video = document.querySelector("#reader video");
-      if (video && video.srcObject) {
-        const tracks = video.srcObject.getVideoTracks();
-        if (tracks.length > 0) return tracks[0];
-      }
-      return null;
-    }
-    function applyTorch(on) {
-      if (!torchTrack) return;
-      torchTrack.applyConstraints({ advanced: [{ torch: !!on }] }).catch(() => {});
-    }
     function torchSupported() {
-      try {
-        return !!(torchTrack && torchTrack.getCapabilities && torchTrack.getCapabilities().torch);
-      } catch (e) { return false; }
+      try { return !!(torchTrack && torchTrack.getCapabilities && torchTrack.getCapabilities().torch); } catch (e) { return false; }
     }
+    function applyTorch(on) { if (torchTrack) torchTrack.applyConstraints({ advanced: [{ torch: !!on }] }).catch(() => {}); }
+    function stopAutoTorch() { if (torchAutoTimer) { clearInterval(torchAutoTimer); torchAutoTimer = null; } }
     function updateFlashBtn() {
       const btn = document.getElementById("flash-btn");
-      if (!torchTrack) { btn.style.display = "none"; return; }
+      if (!torchTrack) { btn.style.display = "none"; stopAutoTorch(); return; }
+      btn.style.display = "block";
       if (!torchSupported()) {
-        btn.style.display = "block";
-        btn.className = "flash-btn disabled";
-        btn.textContent = "🔦 Flash indisponible (Chrome Android requis)";
+        btn.textContent = "🔦 Flash indisponible (Android Chrome requis)";
         return;
       }
-      btn.style.display = "block";
-      if (torchMode === "on") { btn.className = "flash-btn on"; btn.textContent = "🔦 Flash : allumé"; applyTorch(true); stopAuto(); }
-      else if (torchMode === "off") { btn.className = "flash-btn off"; btn.textContent = "🔦 Flash : éteint"; applyTorch(false); stopAuto(); }
-      else { btn.className = "flash-btn auto"; btn.textContent = "🔦 Flash : auto (lampe selon luminosité)"; startAuto(); }
-    }
-    function stopAuto() {
-      if (torchAutoTimer) { clearInterval(torchAutoTimer); torchAutoTimer = null; }
-    }
-    function startAuto() {
-      stopAuto();
-      if (!torchSupported()) return;
-      const c = document.createElement("canvas");
-      c.width = 32; c.height = 24;
-      const ctx = c.getContext("2d");
-      let lastOn = null;
-      torchAutoTimer = setInterval(() => {
-        const video = document.querySelector("#reader video");
-        if (!video || video.readyState < 2 || !torchSupported()) return;
-        try {
-          ctx.drawImage(video, 0, 0, 32, 24);
-          const d = ctx.getImageData(0, 0, 32, 24).data;
-          let sum = 0;
-          for (let i = 0; i < d.length; i += 4) sum += (d[i] + d[i + 1] + d[i + 2]) / 3;
-          const lum = sum / (d.length / 4);
-          const shouldOn = lum < 60;
-          if (shouldOn !== lastOn) { applyTorch(shouldOn); lastOn = shouldOn; }
-        } catch (e) {}
-      }, 1000);
+      if (torchMode === "on") { btn.textContent = "🔦 Flash : allumé"; applyTorch(true); stopAutoTorch(); }
+      else if (torchMode === "off") { btn.textContent = "🔦 Flash : éteint"; applyTorch(false); stopAutoTorch(); }
+      else {
+        btn.textContent = "🔦 Flash : auto (lampe selon luminosité)";
+        stopAutoTorch();
+        const c = document.createElement("canvas"); c.width = 32; c.height = 24;
+        const ctx = c.getContext("2d");
+        let last = null;
+        torchAutoTimer = setInterval(() => {
+          const video = document.querySelector("#reader video");
+          if (!video || video.readyState < 2) return;
+          try {
+            ctx.drawImage(video, 0, 0, 32, 24);
+            const d = ctx.getImageData(0, 0, 32, 24).data;
+            let sum = 0;
+            for (let i = 0; i < d.length; i += 4) sum += (d[i] + d[i+1] + d[i+2]) / 3;
+            const shouldOn = (sum / (d.length / 4)) < 60;
+            if (shouldOn !== last) { applyTorch(shouldOn); last = shouldOn; }
+          } catch (e) {}
+        }, 1000);
+      }
     }
     document.getElementById("flash-btn").onclick = () => {
       if (!torchSupported()) return;
@@ -303,107 +326,77 @@
           { fps: 10, qrbox: { width: 250, height: 250 } },
           (decoded) => {
             showResult(decoded);
-            stopCamera();
+            html5QrCode.stop().then(() => {
+              document.getElementById("stop-btn").style.display = "none";
+              document.getElementById("start-btn").style.display = "block";
+            });
           }
         );
         document.getElementById("start-btn").style.display = "none";
         document.getElementById("stop-btn").style.display = "block";
-        torchTrack = findTorchTrack();
+        const video = document.querySelector("#reader video");
+        if (video && video.srcObject) torchTrack = video.srcObject.getVideoTracks()[0] || null;
         updateFlashBtn();
       } catch (err) {
         alert("Impossible d'accéder à la caméra : " + err);
       }
     };
-    function stopCamera() {
-      stopAuto();
-      applyTorch(false);
-      torchTrack = null;
-      updateFlashBtn();
+
+    document.getElementById("stop-btn").onclick = () => {
       if (html5QrCode) {
+        stopAutoTorch();
+        applyTorch(false);
+        torchTrack = null;
+        updateFlashBtn();
         html5QrCode.stop().then(() => {
           document.getElementById("stop-btn").style.display = "none";
           document.getElementById("start-btn").style.display = "block";
-        }).catch(() => {});
-      }
-      document.getElementById("stop-btn").style.display = "none";
-      document.getElementById("start-btn").style.display = "block";
-    }
-    document.getElementById("stop-btn").onclick = stopCamera;
-
-    // ===== Photo =====
-    document.getElementById("photo-btn").onclick = () => {
-      document.getElementById("photo-input").value = "";
-      document.getElementById("photo-input").click();
-    };
-    document.getElementById("photo-input").onchange = async (e) => {
-      const file = e.target.files[0];
-      if (!file) return;
-      try {
-        if (!photoScanner) photoScanner = new Html5Qrcode("photo-scan");
-        const result = await photoScanner.scanFile(file, true);
-        showResult(result);
-      } catch (err) {
-        alert("Aucun code trouvé dans l'image.\nEssaie avec une photo plus nette ou mieux cadrée.");
-      } finally {
-        e.target.value = "";
+        });
       }
     };
 
-    // ===== NFC Smart Data =====
     document.getElementById("nfc-read-btn").onclick = async () => {
       const status = document.getElementById("nfc-status");
       status.style.display = "block";
       if (!("NDEFReader" in window)) {
-        status.textContent = "⚠️ NFC non disponible sur ce navigateur/appareil. Web NFC fonctionne sur Android avec Chrome.";
+        status.textContent = "⚠️ NFC non disponible ici. Web NFC : Android avec Chrome uniquement (pas iPhone, pas Firefox).";
         return;
       }
-      if (nfcActive) { status.textContent = "📡 Lecture NFC déjà en cours — approche la puce..."; return; }
+      if (nfcActive) { status.textContent = "📡 Lecture déjà en cours — approche la puce..."; return; }
       try {
         const ndef = new NDEFReader();
         await ndef.scan();
         nfcActive = true;
-        status.textContent = "📡 Lecture NFC active — approche la puce du téléphone...";
-        ndef.addEventListener("readingerror", () => {
-          status.textContent = "⚠️ Puce détectée mais illisible. Rapproche-la et réessaie.";
-        });
+        status.textContent = "📡 Approche la puce NFC du téléphone...";
+        ndef.addEventListener("readingerror", () => { status.textContent = "⚠️ Puce détectée mais illisible — rapproche-la."; });
         ndef.addEventListener("reading", ({ serialNumber, message }) => {
           let text = "";
           for (const rec of message.records) {
             try {
-              if (rec.recordType === "text") {
-                const data = new Uint8Array(rec.data.buffer || rec.data);
-                const langLen = data.length ? (data[0] & 0x3F) : 0;
-                text += new TextDecoder("utf-8").decode(data.slice(1 + langLen));
-              } else if (rec.recordType === "url") {
-                const data = new Uint8Array(rec.data.buffer || rec.data);
-                text += new TextDecoder("utf-8").decode(data.slice(1));
-              } else if (rec.recordType === "mime" || rec.recordType === "unknown") {
-                const data = new Uint8Array(rec.data.buffer || rec.data);
+              const data = new Uint8Array(rec.data.buffer || rec.data);
+              if (rec.recordType === "text") text += new TextDecoder("utf-8").decode(data.slice(1 + (data.length ? (data[0] & 0x3F) : 0)));
+              else if (rec.recordType === "url") text += new TextDecoder("utf-8").decode(data.slice(1));
+              else {
                 const t = new TextDecoder("utf-8").decode(data).trim();
                 if (t && /^[\x20-\x7E\u00C0-\u024F\n\r\t]*$/.test(t)) text += t;
               }
             } catch (e) {}
           }
-          const serial = serialNumber ? serialNumber.toUpperCase() : "";
-          if (text) {
-            status.textContent = "✅ Puce lue — n° série : " + serial;
-            showResult(text);
-          } else {
-            status.textContent = "ℹ️ Puce lue (n° série : " + serial + ") mais sans texte exploitable. Contenu brut affiché.";
-            showResult(serial || "(puce sans données)");
-          }
+          const serial = serialNumber ? String(serialNumber).toUpperCase() : "";
+          if (text) { status.textContent = "✅ Puce lue (n° série : " + serial + ")"; showResult(text); }
+          else { status.textContent = "ℹ️ Puce lue (n° série : " + serial + ") sans texte exploitable."; showResult(serial || "(puce sans données)"); }
         });
       } catch (err) {
         nfcActive = false;
-        status.textContent = "⚠️ Impossible de démarrer le NFC : " + err + " (nécessite Android/Chrome, HTTPS et l'autorisation NFC)";
+        status.textContent = "⚠️ Impossible de démarrer le NFC : " + err;
       }
     };
     document.getElementById("nfc-write-btn").onclick = async () => {
       const status = document.getElementById("nfc-status");
       status.style.display = "block";
-      if (!currentValue) { status.textContent = "⚠️ Aucun code actuel : scanne ou génère d'abord un code (il sera écrit sur la puce)."; return; }
+      if (!currentValue) { status.textContent = "⚠️ Scanne ou génère d'abord un code — il sera écrit sur la puce."; return; }
       if (!("NDEFReader" in window)) {
-        status.textContent = "⚠️ NFC non disponible sur ce navigateur/appareil. Web NFC fonctionne sur Android avec Chrome.";
+        status.textContent = "⚠️ NFC non disponible ici. Web NFC : Android avec Chrome uniquement.";
         return;
       }
       try {
@@ -416,17 +409,42 @@
       }
     };
 
+    // ===== Photo (corrigé : scanFile est une méthode d'INSTANCE) =====
+    document.getElementById("photo-btn").onclick = () => {
+      // Réinitialisation du champ pour pouvoir rescanner la même photo
+      document.getElementById("photo-input").value = "";
+      document.getElementById("photo-input").click();
+    };
+
+    document.getElementById("photo-input").onchange = async (e) => {
+      const file = e.target.files[0];
+      if (!file) return;
+
+      try {
+        if (!photoScanner) photoScanner = new Html5Qrcode("photo-scan");
+        const result = await photoScanner.scanFile(file, true);
+        showResult(result);
+      } catch (err) {
+        alert("Aucun code trouvé dans l'image.\nEssaie avec une photo plus nette ou mieuĠcadrée.");
+      } finally {
+        // On vide le champ après usage
+        e.target.value = "";
+      }
+    };
+
     // ===== Generate =====
     document.getElementById("gen-qr").onclick = () => {
       const val = document.getElementById("gen-input").value.trim();
       if (!val) return alert("Entre un texte");
       showResult(val, "qr");
     };
+
     document.getElementById("gen-bc").onclick = () => {
       const val = document.getElementById("gen-input").value.trim();
       if (!val) return alert("Entre un texte");
       showResult(val, "barcode");
     };
+
     document.getElementById("gen-dm").onclick = () => {
       const val = document.getElementById("gen-input").value.trim();
       if (!val) return alert("Entre un texte");
@@ -450,15 +468,14 @@
     function showResult(value, forceType = null) {
       const rep = repairValue(value);
       currentValue = rep.value;
-      if (forceType) currentType = forceType;
-      document.getElementById("result-value").textContent = currentValue;
       const note = document.getElementById("repair-note");
       if (rep.note) { note.textContent = rep.note; note.style.display = "block"; }
       else note.style.display = "none";
+      if (forceType) currentType = forceType;
+      document.getElementById("result-value").textContent = value;
       document.getElementById("result-area").style.display = "block";
-      addToHistory(currentValue);
+      addToHistory(value);
       renderCode();
-      document.getElementById("result-area").scrollIntoView({ behavior: "smooth", block: "nearest" });
     }
 
     function renderCode() {
@@ -467,10 +484,6 @@
       const color = document.getElementById("code-color").value;
 
       if (currentType === "qr") {
-        if (typeof QRCode === "undefined") {
-          output.innerHTML = "<p style='color:#f87171;padding:10px'>Bibliothèque QR non chargée — vérifie ta connexion internet</p>";
-          return;
-        }
         const canvas = document.createElement("canvas");
         QRCode.toCanvas(canvas, currentValue, {
           width: 260,
@@ -481,17 +494,14 @@
         });
       } else if (currentType === "dm") {
         if (typeof bwipjs === "undefined") {
-          output.innerHTML = "<p style='color:#f87171;padding:10px'>Bibliothèque DataMatrix non chargée — vérifie ta connexion internet</p>";
+          output.innerHTML = "<p style='color:#f87171;padding:10px'>Bibliothèque DataMatrix non chargée — vérifie ta connexion</p>";
           return;
         }
         const canvas = document.createElement("canvas");
         try {
           bwipjs.toCanvas(canvas, {
-            bcid: "datamatrix",
-            text: currentValue,
-            scale: 4,
-            barcolor: color.replace("#", ""),
-            background: "ffffff"
+            bcid: "datamatrix", text: currentValue, scale: 4,
+            barcolor: color.replace("#", ""), background: "ffffff"
           });
           output.appendChild(canvas);
         } catch (e) {
@@ -525,7 +535,7 @@
         a.download = "g-scan-qrcode.png";
         a.click();
       } else {
-        alert("Le téléchargement PNG fonctionne pour les QR Codes et DataMatrix.\nPour les codes-barres, utilise l'impression ou une capture d'écran.");
+        alert("Le téléchargement PNG fonctionne actuellement uniquement pour les QR Codes.\nPour les codes-barres, utilise l'impression ou une capture d'écran.");
       }
     };
 
