@@ -157,7 +157,11 @@
 
   <!-- SCAN -->
   <div class="card">
-    <div id="reader"></div>
+    <div id="reader-wrap" style="position:relative;border-radius:12px;overflow:hidden">
+      <div id="reader"></div>
+      <canvas id="lens-overlay" style="position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none;z-index:5"></canvas>
+    </div>
+    <div id="lens-hint" class="hint" style="display:none"></div>
     <!-- Zone cachée nécessaire pour le scan de photo (html5-qrcode exige un élément) -->
     <div id="photo-scan" style="display:none"></div>
     <button id="start-btn">▶ Démarrer la caméra</button>
@@ -168,6 +172,8 @@
       <button class="secondary" id="zoom-in-btn" style="margin:0">➕ Zoom</button>
     </div>
     <button class="secondary" id="ocr-btn">🔎 Lire le texte à côté du code (OCR)</button>
+    <button class="secondary" id="ocr-free-btn">📄 OCR texte libre (photo)</button>
+    <button class="secondary" id="fullscreen-btn">⛶ Caméra plein écran</button>
     <button class="secondary" id="photo-btn">📸 Scanner depuis une photo</button>
     <input type="file" id="photo-input" accept="image/*" capture="environment" style="display:none" />
     <input type="file" id="photo-ocr-input" accept="image/*" capture="environment" style="display:none" />
@@ -189,20 +195,17 @@
     <button id="gen-qr">Générer QR Code</button>
     <button class="secondary" id="gen-bc">Générer Code-barres</button>
     <button class="secondary" id="gen-dm">Générer DataMatrix</button>
-    <select id="bc-type">
-      <option value="CODE128">Code 128</option>
-      <option value="EAN13">EAN-13</option>
-      <option value="EAN8">EAN-8</option>
-      <option value="UPC">UPC-A</option>
-      <option value="CODE39">Code 39</option>
-    </select>
+    <p class="hint">Le type de code-barres se change d'un seul bouton dans la carte résultat (🏷️ Type).</p>
   </div>
 
   <!-- RESULT -->
   <div class="card" id="result-area">
     <div class="hint">Code détecté / généré :</div>
     <div id="result-value"></div>
+    <button class="secondary" id="copy-btn" style="margin-top:0">📋 Copier la valeur</button>
     <div id="repair-note" class="hint" style="display:none"></div>
+    <div id="content-info" class="hint" style="display:none"></div>
+    <div id="content-actions"></div>
 
     <div class="color-row">
       <span class="hint">Couleur :</span>
@@ -214,6 +217,7 @@
       <button data-type="barcode">Code-barres</button>
       <button data-type="dm">DataMatrix</button>
     </div>
+    <button class="secondary" id="bc-cycle" style="display:none">🏷️ Type : Code 128 ▸</button>
 
     <div id="output"></div>
 
@@ -246,6 +250,18 @@
     let photoScanner = null;
     let currentValue = "";
     let currentType = "qr";
+    // Un seul bouton pour changer de type de code-barres (cycle à chaque appui)
+    const BC_TYPES = [
+      { code: "CODE128", label: "Code 128" },
+      { code: "EAN13",   label: "EAN-13" },
+      { code: "EAN8",    label: "EAN-8" },
+      { code: "UPC",     label: "UPC-A" },
+      { code: "CODE39",  label: "Code 39" },
+      { code: "ITF",     label: "ITF (2/5)" },
+      { code: "ITF14",   label: "ITF-14 (colis)" },
+      { code: "CODABAR", label: "Codabar" }
+    ];
+    let bcIndex = 0;
     let history = JSON.parse(localStorage.getItem("gscan-history") || "[]");
     let torchMode = localStorage.getItem("gscan-torch") || "auto";
     let torchTrack = null;
@@ -278,7 +294,7 @@
       ocrBusy = true;
       showOcrProgress(label);
       try {
-        if (!ocrWorker) ocrWorker = await Tesseract.createWorker("eng");
+        if (!ocrWorker) ocrWorker = await Tesseract.createWorker("eng+fra");
         const { data } = await ocrWorker.recognize(imageLike);
         const text = (data && data.text) ? data.text : "";
         const nums = extractTrackingNumbers(text.replace(/\s+/g, " "));
@@ -291,7 +307,7 @@
           alert("Aucun texte lisible détecté.\nEssaie une photo plus nette et mieux cadrée.");
         }
       } catch (err) {
-        alert("Erreur OCR : " + err);
+        alert("La lecture de texte n'a pas fonctionné.\nVérifie ta connexion internet (le moteur OCR se télécharge la 1re fois) et réessaie.");
       } finally {
         ocrBusy = false;
         document.getElementById("ocr-status").style.display = "none";
@@ -326,7 +342,7 @@
       return c;
     }
 
-    async function ocrFromPhoto(file) {
+    async function ocrFromPhoto(file, freeText = false) {
       const bitmap = await createImageBitmap(file);
       const canvas = document.createElement("canvas");
       canvas.width = bitmap.width;
@@ -342,15 +358,26 @@
       for (const c of crops) {
         await ocrWorkerReady();
         const { data } = await ocrWorker.recognize(c);
-        const nums = extractTrackingNumbers(((data && data.text) || "").replace(/\s+/g, " "));
+        const text = ((data && data.text) || "").replace(/\s+/g, " ").trim();
+        if (freeText && text.length > 3) {
+          document.getElementById("ocr-status").style.display = "none";
+          showResult(text, "qr");
+          const info = document.getElementById("content-info");
+          info.textContent = "📝 Texte libre lu sur la photo — appuie sur « 📋 Copier la valeur »";
+          info.style.display = "block";
+          return;
+        }
+        const nums = extractTrackingNumbers(text);
         if (nums.length > 0) { document.getElementById("ocr-status").style.display = "none"; showResult(nums[0], "qr"); return; }
       }
       document.getElementById("ocr-status").style.display = "none";
-      alert("Aucun texte ni numéro de suivi détecté sur la photo.\nEssaie une photo plus nette.");
+      alert(freeText
+        ? "Aucun texte lisible sur cette photo.\nEssaie une photo plus nette, plus proche et bien éclairée."
+        : "Aucun texte ni numéro de suivi détecté sur la photo.\nEssaie une photo plus nette.");
     }
 
     async function ocrWorkerReady() {
-      if (!ocrWorker) ocrWorker = await Tesseract.createWorker("eng");
+      if (!ocrWorker) ocrWorker = await Tesseract.createWorker("eng+fra");
     }
     let torchAutoTimer = null;
     let nfcActive = false;
@@ -428,6 +455,135 @@
       updateFlashBtn();
     };
 
+    // ===== Suivi visuel du code (façon Google Lens) =====
+    // Encadrement cyan + étiquette (type, valeur, badge suivi/Smart Data) qui suit le code
+    // quand on bouge le téléphone. Uniquement sur les navigateurs avec BarcodeDetector
+    // (Chrome/Edge Android, Chrome PC). Le scan fonctionne quand même sans l'encadrement.
+    const LENS_FORMATS = ["qr_code", "ean_13", "ean_8", "upc_a", "upc_e", "code_39", "code_93", "code_128", "codabar", "itf", "data_matrix", "aztec", "pdf417"];
+    const LENS_LABELS = {
+      qr_code: "QR Code", ean_13: "EAN-13", ean_8: "EAN-8", upc_a: "UPC-A", upc_e: "UPC-E",
+      code_39: "Code 39", code_93: "Code 93", code_128: "Code 128", codabar: "Codabar",
+      itf: "ITF", data_matrix: "DataMatrix", aztec: "Aztec", pdf417: "PDF417"
+    };
+    let lensDetector = null;
+    let lensTimer = null;
+
+    function lensRoundRect(ctx, x, y, w, h, r) {
+      ctx.beginPath();
+      ctx.moveTo(x + r, y);
+      ctx.arcTo(x + w, y, x + w, y + h, r);
+      ctx.arcTo(x + w, y + h, x, y + h, r);
+      ctx.arcTo(x, y + h, x, y, r);
+      ctx.arcTo(x, y, x + w, y, r);
+      ctx.closePath();
+    }
+
+    function lensStop() {
+      if (lensTimer) { clearInterval(lensTimer); lensTimer = null; }
+      const c = document.getElementById("lens-overlay");
+      if (c) {
+        const ctx = c.getContext && c.getContext("2d");
+        if (ctx) ctx.clearRect(0, 0, c.width, c.height);
+        c.style.display = "none";
+      }
+    }
+
+    function lensTick(video, canvas) {
+      return (async () => {
+        try {
+          if (!video || video.readyState < 2) return;
+          const wrap = canvas.parentElement;
+          const w = wrap.clientWidth, h = wrap.clientHeight;
+          if (!w || !h) return;
+          const dpr = window.devicePixelRatio || 1;
+          if (canvas.width !== Math.round(w * dpr) || canvas.height !== Math.round(h * dpr)) {
+            canvas.width = Math.round(w * dpr);
+            canvas.height = Math.round(h * dpr);
+          }
+          const ctx = canvas.getContext("2d");
+          ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+          ctx.clearRect(0, 0, w, h);
+          const codes = await lensDetector.detect(video);
+          if (!codes || codes.length === 0) return;
+          const vRect = video.getBoundingClientRect();
+          const cRect = canvas.getBoundingClientRect();
+          const sx = vRect.width / (video.videoWidth || 1);
+          const sy = vRect.height / (video.videoHeight || 1);
+          const ox = vRect.left - cRect.left;
+          const oy = vRect.top - cRect.top;
+          codes.forEach((cd) => {
+            const pts = (cd.cornerPoints || []).map(p => ({ x: ox + p.x * sx, y: oy + p.y * sy }));
+            if (pts.length < 4) return;
+            // Cadre cyan qui suit le code
+            ctx.beginPath();
+            ctx.moveTo(pts[0].x, pts[0].y);
+            for (let i = 1; i < 4; i++) ctx.lineTo(pts[i].x, pts[i].y);
+            ctx.closePath();
+            ctx.strokeStyle = "rgba(34,211,238,0.95)";
+            ctx.lineWidth = 3;
+            ctx.stroke();
+            // Coins violets (style Lens)
+            const corner = (p, dx, dy) => {
+              ctx.beginPath();
+              ctx.moveTo(p.x + dx * 14, p.y);
+              ctx.lineTo(p.x, p.y);
+              ctx.lineTo(p.x, p.y + dy * 14);
+              ctx.strokeStyle = "rgba(168,85,247,1)";
+              ctx.lineWidth = 4;
+              ctx.stroke();
+            };
+            corner(pts[0], -1, -1); corner(pts[1], 1, -1); corner(pts[2], 1, 1); corner(pts[3], -1, 1);
+            // Étiquette : type + valeur + badge suivi / Smart Data
+            const val = String(cd.rawValue || "");
+            let badge = "";
+            if (/^[A-Z]{2}\d{9}[A-Z]{2}$/i.test(val)) badge = "  📮 suivi";
+            else if (/^SD\d{6,}/i.test(val) || /^SMARD/i.test(val)) badge = "  🔗 Smart Data";
+            else if (/^https?:\/\//i.test(val)) badge = "  🌐 lien";
+            else if (/^\d{8}$|^\d{12,14}$/.test(val)) badge = "  📦 produit";
+            const txt = (LENS_LABELS[cd.format] || cd.format || "Code") + " : " + (val.length > 24 ? val.slice(0, 24) + "…" : val) + badge;
+            ctx.font = "600 12px system-ui, sans-serif";
+            const tw = ctx.measureText(txt).width + 14;
+            const topY = Math.min(pts[0].y, pts[1].y);
+            const bx = Math.max(4, Math.min(Math.min(pts[0].x, pts[1].x), w - tw - 4));
+            const by = (topY - 26 >= 4) ? topY - 26 : Math.min(h - 24, Math.max(pts[2].y, pts[3].y) + 6);
+            ctx.fillStyle = "rgba(15,12,26,0.85)";
+            lensRoundRect(ctx, bx, by, tw, 20, 6);
+            ctx.fill();
+            ctx.strokeStyle = "rgba(168,85,247,0.8)";
+            ctx.lineWidth = 1;
+            lensRoundRect(ctx, bx, by, tw, 20, 6);
+            ctx.stroke();
+            ctx.fillStyle = "#e9d5ff";
+            ctx.fillText(txt, bx + 7, by + 14);
+          });
+        } catch (e) { /* frame ignorée */ }
+      })();
+    }
+
+    function lensStart(video) {
+      lensStop();
+      const hint = document.getElementById("lens-hint");
+      if (!("BarcodeDetector" in window)) {
+        if (hint) {
+          hint.textContent = "ℹ️ L'encadrement qui suit le code n'est pas disponible sur ce navigateur (essaie Chrome) — le scan fonctionne quand même.";
+          hint.style.display = "block";
+        }
+        return;
+      }
+      if (hint) hint.style.display = "none";
+      try { lensDetector = lensDetector || new BarcodeDetector({ formats: LENS_FORMATS }); }
+      catch (e) {
+        if (hint) {
+          hint.textContent = "ℹ️ L'encadrement live n'a pas pu démarrer — le scan fonctionne quand même.";
+          hint.style.display = "block";
+        }
+        return;
+      }
+      const canvas = document.getElementById("lens-overlay");
+      canvas.style.display = "block";
+      lensTimer = setInterval(() => { lensTick(video, canvas); }, 120);
+    }
+
     // ===== Camera =====
     document.getElementById("start-btn").onclick = async () => {
       html5QrCode = new Html5Qrcode("reader");
@@ -457,6 +613,7 @@
           },
           (decoded) => {
             if (navigator.vibrate) navigator.vibrate(150);
+            lensStop();
             showResult(decoded);
             html5QrCode.stop().then(() => {
               document.getElementById("stop-btn").style.display = "none";
@@ -470,13 +627,33 @@
         if (video && video.srcObject) torchTrack = video.srcObject.getVideoTracks()[0] || null;
         updateFlashBtn();
         setupZoom(video);
+        lensStart(video);
       } catch (err) {
-        alert("Impossible d'accéder à la caméra : " + err);
+        const msg = String(err && err.message || err);
+        if (/permission|denied|NotAllowed/i.test(msg)) {
+          alert("📷 La caméra est bloquée.\n\nPour l'autoriser : appuie sur le petit cadenas 🔒 ou l'icône ⚙️ dans la barre d'adresse → Autoriser la caméra, puis recharge la page.");
+        } else if (/NotFound|no camera|Requested device/i.test(msg)) {
+          alert("📷 Aucune caméra détectée sur cet appareil.\n\nTu peux quand même scanner une photo avec « 📸 Scanner depuis une photo ».");
+        } else {
+          alert("📷 La caméra n'a pas pu démarrer.\n\nEssaie de fermer puis rouvrir l'application, ou utilise « 📸 Scanner depuis une photo ».");
+        }
+      }
+    };
+
+    // Caméra plein écran
+    document.getElementById("fullscreen-btn").onclick = () => {
+      const card = document.querySelector("#reader").closest(".card");
+      if (!document.fullscreenElement) {
+        (card.requestFullscreen ? card.requestFullscreen() : Promise.reject())
+          .catch(() => alert("⛶ Le plein écran n'est pas disponible sur ce navigateur."));
+      } else {
+        document.exitFullscreen();
       }
     };
 
     document.getElementById("stop-btn").onclick = () => {
       if (html5QrCode) {
+        lensStop();
         stopAutoTorch();
         applyTorch(false);
         torchTrack = null;
@@ -607,16 +784,27 @@
 
     // ===== OCR =====
     document.getElementById("ocr-btn").onclick = () => ocrFromCamera();
+
+    // OCR texte libre : toute la photo devient texte copiable
+    let ocrFreeTextMode = false;
+    document.getElementById("ocr-free-btn").onclick = () => {
+      ocrFreeTextMode = true;
+      document.getElementById("photo-ocr-input").value = "";
+      document.getElementById("photo-ocr-input").click();
+    };
+
     document.getElementById("photo-ocr-input").onchange = async (e) => {
       const file = e.target.files[0];
       if (!file) return;
+      const freeText = ocrFreeTextMode;
+      ocrFreeTextMode = false;
       e.target.value = "";
       try {
-        showOcrProgress("Photo — analyse OCR");
-        await ocrFromPhoto(file);
+        showOcrProgress(freeText ? "Photo — OCR texte libre" : "Photo — analyse OCR");
+        await ocrFromPhoto(file, freeText);
       } catch (err) {
         document.getElementById("ocr-status").style.display = "none";
-        alert("Erreur OCR : " + err);
+        alert("La lecture de texte n'a pas fonctionné sur cette photo.\nEssaie une photo plus nette, plus proche, avec un bon éclairage.");
       }
     };
 
@@ -645,12 +833,24 @@
         document.querySelectorAll(".tabs button").forEach(b => b.classList.remove("active"));
         btn.classList.add("active");
         currentType = btn.dataset.type;
+        document.getElementById("bc-cycle").style.display = (currentType === "barcode") ? "block" : "none";
         renderCode();
       };
     });
 
+    // ===== Un seul bouton : cycle des types de codes-barres =====
+    function updateBcCycleBtn() {
+      const btn = document.getElementById("bc-cycle");
+      btn.textContent = "🏷️ Type : " + BC_TYPES[bcIndex].label + " ▸ (appuie pour changer)";
+      btn.style.display = (currentType === "barcode") ? "block" : "none";
+    }
+    document.getElementById("bc-cycle").onclick = () => {
+      bcIndex = (bcIndex + 1) % BC_TYPES.length;
+      updateBcCycleBtn();
+      renderCode();
+    };
+
     document.getElementById("code-color").oninput = renderCode;
-    document.getElementById("bc-type").onchange = renderCode;
 
     // ===== Show Result =====
     function showResult(value, forceType = null) {
@@ -662,9 +862,88 @@
       if (forceType) currentType = forceType;
       document.getElementById("result-value").textContent = value;
       document.getElementById("result-area").style.display = "block";
+      updateContentInfo(value);
       addToHistory(value);
       renderCode();
     }
+
+    // ===== Détection du contenu : URL, prix produit, suivi postal, Wi-Fi =====
+    function updateContentInfo(value) {
+      const info = document.getElementById("content-info");
+      const actions = document.getElementById("content-actions");
+      info.style.display = "none";
+      actions.innerHTML = "";
+      const v = String(value).trim();
+
+      const addBtn = (label, url) => {
+        const b = document.createElement("button");
+        b.className = "secondary";
+        b.textContent = label;
+        b.onclick = () => window.open(url, "_blank", "noopener");
+        actions.appendChild(b);
+        return b;
+      };
+      const showInfo = (t) => { info.textContent = t; info.style.display = "block"; };
+
+      if (/^https?:\/\//i.test(v)) {
+        showInfo("🌐 Adresse web (URL) détectée");
+        addBtn("🌐 Ouvrir le lien", v);
+      }
+      else if (/^WIFI:/i.test(v)) {
+        const ssid = (v.match(/S:([^;]*)/i) || [])[1] || "";
+        showInfo("📶 Réseau Wi-Fi détecté : " + ssid);
+        const b = addBtn("📋 Copier le mot de passe Wi-Fi", "#");
+        b.onclick = async () => {
+          const pass = (v.match(/P:([^;]*)/i) || [])[1] || "";
+          copyText(pass || "(pas de mot de passe dans le QR)");
+        };
+      }
+      else if (/^[A-Z]{2}\d{9}[A-Z]{2}$/i.test(v)) {
+        showInfo("📮 Numéro de suivi de colis détecté");
+        addBtn("📮 Suivre ce colis", "https://www.laposte.fr/outils/suivre-vos-envois?code=" + encodeURIComponent(v));
+      }
+      else if (/^\d[A-Z]\s?\d{3}\s?\d{3}\s?\d{3}$/i.test(v)) {
+        showInfo("🚚 Numéro Chronopost/DPD détecté");
+        addBtn("🚚 Suivre ce colis", "https://www.chronopost.fr/fr/suivi?keyword=" + encodeURIComponent(v));
+      }
+      else if (/^(97[89]\d{10}|\d{9}[\dXx])$/.test(v.replace(/[- ]/g, ""))) {
+        showInfo("📚 Numéro ISBN (livre) détecté");
+        const isbn = v.replace(/[- ]/g, "");
+        addBtn("🛒 Chercher le livre au meilleur prix", "https://www.google.com/search?tbm=shop&q=" + encodeURIComponent(isbn));
+        addBtn("🔎 Recherche générale", "https://www.google.com/search?q=" + encodeURIComponent(isbn));
+      }
+      else if (/^\d{8}$|^\d{12,14}$/.test(v)) {
+        showInfo("📦 Code produit détecté — tu peux chercher son prix et ses infos");
+        addBtn("🛒 Chercher le moins cher", "https://www.google.com/search?tbm=shop&q=" + encodeURIComponent(v));
+        addBtn("🥫 Infos produit (alimentaire)", "https://world.openfoodfacts.org/product/" + encodeURIComponent(v));
+        addBtn("🔎 Recherche générale", "https://www.google.com/search?q=" + encodeURIComponent(v));
+      }
+      else if (/^mailto:/i.test(v)) addBtn("✉️ Écrire un email", v);
+      else if (/^tel:/i.test(v)) addBtn("📞 Appeler", v);
+      else if (/^SD\d{6,}/i.test(v)) showInfo("🔗 Identifiant Smart Data détecté");
+    }
+
+    // ===== Copier =====
+    async function copyText(txt) {
+      try {
+        await navigator.clipboard.writeText(txt);
+        const b = document.getElementById("copy-btn");
+        const old = b.textContent;
+        b.textContent = "✅ Copié !";
+        setTimeout(() => { b.textContent = old; }, 1500);
+      } catch (e) {
+        const ta = document.createElement("textarea");
+        ta.value = txt;
+        document.body.appendChild(ta);
+        ta.select();
+        document.execCommand("copy");
+        document.body.removeChild(ta);
+      }
+    }
+    document.getElementById("copy-btn").onclick = () => {
+      if (!currentValue) return alert("Rien à copier pour le moment — scanne ou génère d'abord un code.");
+      copyText(currentValue);
+    };
 
     function renderCode() {
       const output = document.getElementById("output");
@@ -699,7 +978,7 @@
         const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
         try {
           JsBarcode(svg, currentValue, {
-            format: document.getElementById("bc-type").value,
+            format: BC_TYPES[bcIndex].code,
             lineColor: color,
             width: 2,
             height: 80,
@@ -709,21 +988,50 @@
           });
           output.appendChild(svg);
         } catch (e) {
-          output.innerHTML = "<p style='color:#f87171;padding:10px'>Format de code-barres non compatible avec cette valeur</p>";
+          output.innerHTML = "<p style='color:#f87171;padding:10px'>Cette valeur ne va pas avec le type " + BC_TYPES[bcIndex].label + ".<br>Appuie sur le bouton « 🏷️ Type » ci-dessus pour essayer un autre type.</p>";
         }
       }
     }
 
-    // ===== Download =====
-    document.getElementById("download-btn").onclick = () => {
+    // ===== Download (PNG pour TOUS les types, y compris codes-barres SVG) =====
+    function svgToCanvas(svgEl) {
+      return new Promise((resolve, reject) => {
+        try {
+          const clone = svgEl.cloneNode(true);
+          const xml = new XMLSerializer().serializeToString(clone);
+          const svg64 = "data:image/svg+xml;charset=utf-8," + encodeURIComponent(xml);
+          const img = new Image();
+          img.onload = () => {
+            const c = document.createElement("canvas");
+            c.width = Math.max(img.width, 1);
+            c.height = Math.max(img.height, 1);
+            const ctx = c.getContext("2d");
+            ctx.fillStyle = "#ffffff";
+            ctx.fillRect(0, 0, c.width, c.height);
+            ctx.drawImage(img, 0, 0);
+            resolve(c);
+          };
+          img.onerror = () => reject(new Error("SVG invalide"));
+          img.src = svg64;
+        } catch (e) { reject(e); }
+      });
+    }
+
+    document.getElementById("download-btn").onclick = async () => {
       const canvas = document.querySelector("#output canvas");
-      if (canvas) {
+      try {
+        let target = canvas;
+        if (!target) {
+          const svg = document.querySelector("#output svg");
+          if (svg) target = await svgToCanvas(svg);
+        }
+        if (!target) { alert("Aucun code affiché — génère d'abord un code."); return; }
         const a = document.createElement("a");
-        a.href = canvas.toDataURL("image/png");
+        a.href = target.toDataURL("image/png");
         a.download = "g-scan-qrcode.png";
         a.click();
-      } else {
-        alert("Le téléchargement PNG fonctionne actuellement uniquement pour les QR Codes.\nPour les codes-barres, utilise l'impression ou une capture d'écran.");
+      } catch (err) {
+        alert("Le téléchargement PNG a échoué.\nTu peux utiliser « 🖨️ Imprimer » ou une capture d'écran à la place.");
       }
     };
 
@@ -756,7 +1064,7 @@
         const safe = h.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/'/g, "\\'").replace(/"/g, "&quot;");
         return `
           <div class="history-item">
-            <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:70%">${h}</span>
+            <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:70%">${safe}</span>
             <button onclick="showResult('${safe}')">Voir</button>
           </div>
         `;
