@@ -1,0 +1,411 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>G-scan-qrcode</title>
+  <meta name="theme-color" content="#0f0c1a" />
+  <meta name="description" content="Scanner et régénérer QR Code, codes-barres et DataMatrix — rapide et moderne" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <link rel="manifest" href="manifest.json" />
+  
+  <!-- Favicon en data-URI (plus besoin de fichier externe) -->
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='22' fill='%237c3aed'/><text y='68' x='50' text-anchor='middle' font-size='52' font-weight='800' fill='white' font-family='system-ui'>G</text></svg>" />
+
+  <!-- Bibliothèques -->
+  <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.3/build/qrcode.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.6/dist/JsBarcode.all.min.js"></script>
+
+  <style>
+    :root {
+      --bg: #0f0c1a;
+      --card: rgba(255,255,255,0.05);
+      --border: rgba(255,255,255,0.1);
+      --text: #f0eeff;
+      --muted: #a5a0c4;
+      --accent: linear-gradient(135deg, #06b6d4, #7c3aed 50%, #db2777);
+      --radius: 18px;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      padding: 16px;
+      max-width: 520px;
+      margin: 0 auto;
+      line-height: 1.45;
+    }
+    h1 {
+      font-size: 1.55rem;
+      font-weight: 800;
+      margin-bottom: 4px;
+      background: var(--accent);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+    .subtitle { color: var(--muted); font-size: 0.9rem; margin-bottom: 20px; }
+    .card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 16px;
+      margin-bottom: 14px;
+      backdrop-filter: blur(12px);
+    }
+    button {
+      width: 100%;
+      padding: 14px 18px;
+      border: none;
+      border-radius: 14px;
+      font-size: 1rem;
+      font-weight: 700;
+      cursor: pointer;
+      color: white;
+      background: var(--accent);
+      transition: transform 0.1s, opacity 0.15s;
+    }
+    button:active { transform: scale(0.98); }
+    button.secondary {
+      background: rgba(255,255,255,0.07);
+      border: 1px solid var(--border);
+      margin-top: 8px;
+    }
+    input, select, textarea {
+      width: 100%;
+      padding: 13px 14px;
+      border-radius: 12px;
+      border: 1px solid var(--border);
+      background: rgba(0,0,0,0.3);
+      color: var(--text);
+      font-size: 1rem;
+      margin-top: 8px;
+    }
+    input:focus, select:focus { outline: 2px solid #7c3aed; border-color: transparent; }
+    #reader {
+      width: 100%;
+      border-radius: 14px;
+      overflow: hidden;
+      background: #000;
+      margin-bottom: 12px;
+    }
+    .tabs { display: flex; gap: 6px; margin: 12px 0; }
+    .tabs button {
+      flex: 1;
+      padding: 10px;
+      font-size: 0.9rem;
+      background: rgba(255,255,255,0.06);
+    }
+    .tabs button.active { background: var(--accent); }
+    #result-area { display: none; text-align: center; }
+    #result-value {
+      font-size: 1.25rem;
+      font-weight: 700;
+      word-break: break-all;
+      margin: 12px 0;
+      background: var(--accent);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+    #output {
+      background: white;
+      border-radius: 12px;
+      padding: 12px;
+      margin: 12px 0;
+      display: inline-block;
+    }
+    #output canvas, #output svg { max-width: 100%; height: auto; }
+    .history-item {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 10px 0;
+      border-bottom: 1px solid var(--border);
+      font-size: 0.95rem;
+    }
+    .history-item button {
+      width: auto;
+      padding: 6px 12px;
+      font-size: 0.8rem;
+    }
+    .hint { color: var(--muted); font-size: 0.85rem; margin-top: 8px; }
+    .color-row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin: 10px 0;
+    }
+    input[type="color"] {
+      width: 48px;
+      height: 36px;
+      padding: 2px;
+      border: none;
+      background: none;
+    }
+  </style>
+</head>
+<body>
+
+  <h1>G-scan-qrcode</h1>
+  <p class="subtitle">Scanner • Régénérer • Générer — rapide & moderne</p>
+
+  <!-- SCAN -->
+  <div class="card">
+    <div id="reader"></div>
+    <!-- Zone cachée nécessaire pour le scan de photo (html5-qrcode exige un élément) -->
+    <div id="photo-scan" style="display:none"></div>
+    <button id="start-btn">▒ Démarrer la caméra</button>
+    <button class="secondary" id="stop-btn" style="display:none">⏹ Arrêter la caméra</button>
+    <button class="secondary" id="photo-btn">📸 Scanner depuis une photo</button>
+    <input type="file" id="photo-input" accept="image/*" capture="environment" style="display:none" />
+  </div>
+
+  <!-- GENERATE -->
+  <div class="card">
+    <strong>Générer un code</strong>
+    <input type="text" id="gen-input" placeholder="Texte, URL, numéro..." />
+    <button id="gen-qr">Générer QR Code</button>
+    <button class="secondary" id="gen-bc">Générer Code-barres</button>
+    <select id="bc-type">
+      <option value="CODE128">Code 128</option>
+      <option value="EAN13">EAN-13</option>
+      <option value="EAN8">EAN-8</option>
+      <option value="UPC">UPC-A</option>
+      <option value="CODE39">Code 39</option>
+    </select>
+  </div>
+
+  <!-- RESULT -->
+  <div class="card" id="result-area">
+    <div class="hint">Code détecté / généré :</div>
+    <div id="result-value"></div>
+
+    <div class="color-row">
+      <span class="hint">Couleur :</span>
+      <input type="color" id="code-color" value="#000000" />
+    </div>
+
+    <div class="tabs">
+      <button class="active" data-type="qr">QR Code</button>
+      <button data-type="barcode">Code-barres</button>
+    </div>
+
+    <div id="output"></div>
+
+    <button id="download-btn">💾 Télécharger PNG</button>
+    <button class="secondary" id="print-btn">🖨️ Imprimer</button>
+    <button class="secondary" id="clear-btn">🗑️ Effacer</button>
+  </div>
+
+  <!-- HISTORY -->
+  <div class="card">
+    <strong>Historique</strong>
+    <div id="history-list" class="hint">Aucun code pour le moment</div>
+    <button class="secondary" id="clear-history" style="margin-top:12px">Tout effacer</button>
+  </div>
+
+  <p class="hint" style="text-align:center;margin-top:20px">
+    🔒 Tout reste sur ton appareil — rien n’est envoyé sur internet
+  </p>
+
+  <script>
+    // ===== Service Worker =====
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('./sw.js')
+        .then(() => console.log('Service Worker enregistré'))
+        .catch(err => console.log('SW erreur:', err));
+    }
+
+    // ===== Variables =====
+    let html5QrCode = null;
+    let photoScanner = null;
+    let currentValue = "";
+    let currentType = "qr";
+    let history = JSON.parse(localStorage.getItem("gscan-history") || "[]");
+
+    // ===== Camera =====
+    document.getElementById("start-btn").onclick = async () => {
+      html5QrCode = new Html5Qrcode("reader");
+      try {
+        await html5QrCode.start(
+          { facingMode: "environment" },
+          { fps: 10, qrbox: { width: 250, height: 250 } },
+          (decoded) => {
+            showResult(decoded);
+            html5QrCode.stop().then(() => {
+              document.getElementById("stop-btn").style.display = "none";
+              document.getElementById("start-btn").style.display = "block";
+            });
+          }
+        );
+        document.getElementById("start-btn").style.display = "none";
+        document.getElementById("stop-btn").style.display = "block";
+      } catch (err) {
+        alert("Impossible d'accéder à la caméra : " + err);
+      }
+    };
+
+    document.getElementById("stop-btn").onclick = () => {
+      if (html5QrCode) {
+        html5QrCode.stop().then(() => {
+          document.getElementById("stop-btn").style.display = "none";
+          document.getElementById("start-btn").style.display = "block";
+        });
+      }
+    };
+
+    // ===== Photo (corrigé : scanFile est une méthode d'INSTANCE) =====
+    document.getElementById("photo-btn").onclick = () => {
+      // Réinitialisation du champ pour pouvoir rescanner la même photo
+      document.getElementById("photo-input").value = "";
+      document.getElementById("photo-input").click();
+    };
+
+    document.getElementById("photo-input").onchange = async (e) => {
+      const file = e.target.files[0];
+      if (!file) return;
+
+      try {
+        if (!photoScanner) photoScanner = new Html5Qrcode("photo-scan");
+        const result = await photoScanner.scanFile(file, true);
+        showResult(result);
+      } catch (err) {
+        alert("Aucun code trouvé dans l'image.\nEssaie avec une photo plus nette ou mieu� cadrée.");
+      } finally {
+        // On vide le champ après usage
+        e.target.value = "";
+      }
+    };
+
+    // ===== Generate =====
+    document.getElementById("gen-qr").onclick = () => {
+      const val = document.getElementById("gen-input").value.trim();
+      if (!val) return alert("Entre un texte");
+      showResult(val, "qr");
+    };
+
+    document.getElementById("gen-bc").onclick = () => {
+      const val = document.getElementById("gen-input").value.trim();
+      if (!val) return alert("Entre un texte");
+      showResult(val, "barcode");
+    };
+
+    // ===== Tabs =====
+    document.querySelectorAll(".tabs button").forEach(btn => {
+      btn.onclick = () => {
+        document.querySelectorAll(".tabs button").forEach(b => b.classList.remove("active"));
+        btn.classList.add("active");
+        currentType = btn.dataset.type;
+        renderCode();
+      };
+    });
+
+    document.getElementById("code-color").oninput = renderCode;
+    document.getElementById("bc-type").onchange = renderCode;
+
+    // ===== Show Result =====
+    function showResult(value, forceType = null) {
+      currentValue = value;
+      if (forceType) currentType = forceType;
+      document.getElementById("result-value").textContent = value;
+      document.getElementById("result-area").style.display = "block";
+      addToHistory(value);
+      renderCode();
+    }
+
+    function renderCode() {
+      const output = document.getElementById("output");
+      output.innerHTML = "";
+      const color = document.getElementById("code-color").value;
+
+      if (currentType === "qr") {
+        const canvas = document.createElement("canvas");
+        QRCode.toCanvas(canvas, currentValue, {
+          width: 260,
+          color: { dark: color, light: "#ffffff" },
+          margin: 2
+        }, (err) => {
+          if (!err) output.appendChild(canvas);
+        });
+      } else {
+        const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+        try {
+          JsBarcode(svg, currentValue, {
+            format: document.getElementById("bc-type").value,
+            lineColor: color,
+            width: 2,
+            height: 80,
+            displayValue: true,
+            fontSize: 16,
+            margin: 10
+          });
+          output.appendChild(svg);
+        } catch (e) {
+          output.innerHTML = "<p style='color:#f87171;padding:10px'>Format de code-barres non compatible avec cette valeur</p>";
+        }
+      }
+    }
+
+    // ===== Download =====
+    document.getElementById("download-btn").onclick = () => {
+      const canvas = document.querySelector("#output canvas");
+      if (canvas) {
+        const a = document.createElement("a");
+        a.href = canvas.toDataURL("image/png");
+        a.download = "g-scan-qrcode.png";
+        a.click();
+      } else {
+        alert("Le téléchargement PNG fonctionne actuellement uniquement pour les QR Codes.\nPour les codes-barres, utilise l'impression ou une capture d'écran.");
+      }
+    };
+
+    // ===== Print =====
+    document.getElementById("print-btn").onclick = () => window.print();
+
+    // ===== Clear =====
+    document.getElementById("clear-btn").onclick = () => {
+      document.getElementById("result-area").style.display = "none";
+      currentValue = "";
+    };
+
+    // ===== History =====
+    function addToHistory(val) {
+      history = history.filter(h => ` !== val);
+      history.unshift(val);
+      if (history.length > 20) history.pop();
+      localStorage.setItem("gscan-history", JSON.stringify(history));
+      renderHistory();
+    }
+
+    function renderHistory() {
+      const list = document.getElementById("history-list");
+      if (history.length === 0) {
+        list.innerHTML = "Aucun code pour le moment";
+        return;
+      }
+      list.innerHTML = history.map(h => {
+        const safe = h.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/'/g, "\\'").replace(/"/g, "&quot;");
+        return `
+          <div class="history-item">
+            <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:70%">${h}</span>
+            <button onclick="showResult('${safe}')">Voir</button>
+          </div>
+        `;
+      }).join("");
+    }
+
+    document.getElementById("clear-history").onclick = () => {
+      history = [];
+      localStorage.removeItem("gscan-history");
+      renderHistory();
+    };
+
+    // Init
+    renderHistory();
+  </script>
+</body>
+</html>
