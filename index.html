@@ -193,6 +193,14 @@
     <button class="secondary" id="photo-btn">📸 Scanner depuis une photo</button>
     <input type="file" id="photo-input" accept="image/*" capture="environment" style="display:none" />
     <input type="file" id="photo-ocr-input" accept="image/*" capture="environment" style="display:none" />
+    <!-- IA vision (Gemini — clé gratuite, sans carte bancaire) -->
+    <button class="secondary" id="ai-btn">🤖 Identifier avec l'IA (photo)</button>
+    <button class="secondary" id="ai-key-btn">⚙️ Clé IA Gemini</button>
+    <input type="password" id="ai-key" placeholder="Colle ta clé Gemini (gratuite : aistudio.google.com → Get API key)" style="display:none" />
+    <input type="text" id="ai-question" placeholder="Question optionnelle pour l'IA (ex. « où jeter ce paquet ? »)" style="display:none" />
+    <input type="file" id="ai-photo-input" accept="image/*" capture="environment" style="display:none" />
+    <div class="hint" id="ai-privacy" style="display:none">ℹ️ L'identification IA envoie la photo aux serveurs Google pour analyse. Le scan de codes, lui, reste 100 % sur ton téléphone.</div>
+    <div id="ai-answer" style="display:none"></div>
     <div class="hint" id="ocr-status" style="display:none"></div>
   </div>
 
@@ -641,7 +649,7 @@
       html5QrCode = new Html5Qrcode("reader");
       try {
         await html5QrCode.start(
-          { facingMode: "environment", width: { ideal: 1920 }, height: { ideal: 1080 }, frameRate: { ideal: 30 } },
+          { facingMode: "environment" },
           {
             fps: 15,
             formatsToSupport: [
@@ -686,7 +694,7 @@
         } else if (/NotFound|no camera|Requested device/i.test(msg)) {
           alert("📷 Aucune caméra détectée sur cet appareil.\n\nTu peux quand même scanner une photo avec « 📸 Scanner depuis une photo ».");
         } else {
-          alert("📷 La caméra n'a pas pu démarrer.\n\nEssaie de fermer puis rouvrir l'application, ou utilise « 📸 Scanner depuis une photo ».");
+          alert("📷 La caméra n'a pas pu démarrer.\n\nEssaie de fermer puis rouvrir l'application, ou utilise « 📸 Scanner depuis une photo ».\n\n(Détail : " + msg + ")");
         }
       }
     };
@@ -827,6 +835,10 @@
       const track = video && video.srcObject ? video.srcObject.getVideoTracks()[0] : null;
       if (!track) return;
       zoomTrack = track;
+      // Haute résolution APRES démarrage (la config de start() n'accepte qu'UNE clé)
+      try {
+        track.applyConstraints({ width: { ideal: 1920 }, height: { ideal: 1080 }, frameRate: { ideal: 30 } }).catch(() => {});
+      } catch (e) {}
       // Mise au point continue (si la caméra le permet)
       try {
         track.applyConstraints({ advanced: [{ focusMode: "continuous" }] }).catch(() => {});
@@ -925,6 +937,110 @@
 
     document.getElementById("code-color").oninput = renderCode;
 
+    // ===== IA vision (Gemini) — « qu'est-ce que c'est ? » façon Google Lens =====
+    // Clé API gratuite sur aistudio.google.com (sans carte bancaire), collée dans ⚙️.
+    // La photo part chez Google pour l'analyse ; le scan de codes reste 100 % local.
+    const AI_MODELS = ["gemini-3.8-flash", "gemini-3.6-flash", "gemini-2.5-flash"]; // repli si un modèle est retiré
+    let aiBusy = false;
+    const aiKeyInput = document.getElementById("ai-key");
+    aiKeyInput.value = localStorage.getItem("gscan-ai-key") || "";
+    aiKeyInput.oninput = () => localStorage.setItem("gscan-ai-key", aiKeyInput.value.trim());
+
+    document.getElementById("ai-key-btn").onclick = () => {
+      const show = aiKeyInput.style.display === "none";
+      aiKeyInput.style.display = show ? "block" : "none";
+      document.getElementById("ai-question").style.display = show ? "block" : "none";
+      document.getElementById("ai-privacy").style.display = show ? "block" : "none";
+    };
+
+    async function aiAnalyze(dataUrl, question) {
+      const key = (localStorage.getItem("gscan-ai-key") || "").trim();
+      if (!key) {
+        alert("🤖 Pour l'identification IA, il faut une clé Gemini gratuite (2 minutes, sans carte bancaire) :\n\n1. Ouvre https://aistudio.google.com avec ton compte Google\n2. Clique « Get API key » puis « Create API key »\n3. Copie la clé et colle-la dans ⚙️ Clé IA Gemini\n\nEnsuite le bouton 🤖 fonctionne.");
+        document.getElementById("ai-key-btn").click();
+        return;
+      }
+      if (aiBusy) return;
+      aiBusy = true;
+      const st = document.getElementById("ocr-status");
+      st.style.display = "block";
+      st.textContent = "🤖 Analyse IA en cours... (quelques secondes)";
+      const b64 = String(dataUrl).split(",")[1] || "";
+      const prompt =
+        "Tu es un assistant dans une application de scan. Analyse cette photo et réponds en français, de façon claire et structurée : " +
+        "1) Décris l'objet principal (type, marque, produit si reconnaissable). " +
+        "2) Lis et transcris TOUTES les étiquettes visibles : codes-barres et leurs chiffres, QR codes, DataMatrix, numéros de série, date de péremption, adresse. " +
+        "3) Si c'est un colis ou un courrier : indique le transporteur probable (La Poste, Chronopost, Colissimo, UPS, DHL, Colis Privé, Mondial Relay, FedEx, DPD, GLS...) et le numéro de suivi complet. " +
+        "4) Donne un conseil utile (ex. où jeter l'emballage, que faire du colis)." +
+        (question ? "\n\nQuestion de l'utilisateur : " + question : "");
+      const body = {
+        contents: [{ parts: [{ text: prompt }, { inline_data: { mime_type: "image/jpeg", data: b64 } }] }],
+        generationConfig: { temperature: 0.1, maxOutputTokens: 1024 }
+      };
+      try {
+        let text = null, lastErr = "";
+        for (const model of AI_MODELS) {
+          try {
+            const r = await fetch("https://generativelanguage.googleapis.com/v1beta/models/" + model + ":generateContent?key=" + encodeURIComponent(key), {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify(body)
+            });
+            if (r.status === 404) { lastErr = "modèle " + model + " indisponible"; continue; }
+            const j = await r.json();
+            if (!r.ok) throw new Error((j.error && j.error.message) || ("HTTP " + r.status));
+            const parts = j.candidates && j.candidates[0] && j.candidates[0].content && j.candidates[0].content.parts;
+            text = (parts || []).map(p => p.text || "").join("").trim();
+            if (text) break;
+            lastErr = "réponse vide du modèle";
+          } catch (e) { lastErr = String(e && e.message || e); }
+        }
+        if (!text) throw new Error(lastErr || "réponse vide");
+        const ans = document.getElementById("ai-answer");
+        ans.style.display = "block";
+        ans.innerHTML = "";
+        const pre = document.createElement("div");
+        pre.style.cssText = "white-space:pre-wrap;background:rgba(255,255,255,0.05);border:1px solid var(--border);border-radius:12px;padding:12px;margin-top:8px;font-size:0.95rem;line-height:1.5";
+        pre.textContent = "🤖 " + text;
+        ans.appendChild(pre);
+        const cp = document.createElement("button");
+        cp.className = "secondary";
+        cp.textContent = "📋 Copier la réponse de l'IA";
+        cp.onclick = () => copyText(text);
+        ans.appendChild(cp);
+        st.style.display = "none";
+      } catch (err) {
+        const msg = String(err && err.message || err);
+        alert("🤖 L'analyse IA n'a pas abouti.\n\nVérifie ta clé (⚙️ Clé IA Gemini) et ta connexion internet.\n\n(Détail : " + msg + ")");
+      } finally {
+        aiBusy = false;
+      }
+    }
+
+    document.getElementById("ai-btn").onclick = () => {
+      // Caméra allumée ? -> on analyse l'image en direct ; sinon photo au choix
+      if (document.getElementById("stop-btn").style.display !== "none") {
+        const video = document.querySelector("#reader video");
+        if (video && video.videoWidth) {
+          const c = document.createElement("canvas");
+          c.width = video.videoWidth; c.height = video.videoHeight;
+          c.getContext("2d").drawImage(video, 0, 0);
+          aiAnalyze(c.toDataURL("image/jpeg", 0.85), document.getElementById("ai-question").value.trim());
+          return;
+        }
+      }
+      document.getElementById("ai-photo-input").value = "";
+      document.getElementById("ai-photo-input").click();
+    };
+    document.getElementById("ai-photo-input").onchange = (e) => {
+      const file = e.target.files[0];
+      if (!file) return;
+      e.target.value = "";
+      const fr = new FileReader();
+      fr.onload = () => aiAnalyze(fr.result, document.getElementById("ai-question").value.trim());
+      fr.readAsDataURL(file);
+    };
+
     // ===== Show Result =====
     function showResult(value, forceType = null) {
       const rep = repairValue(value);
@@ -938,6 +1054,50 @@
       updateContentInfo(value);
       addToHistory(value);
       renderCode();
+    }
+
+    // ===== Transporteurs : UPS, DHL, FedEx, Colis Privé, Mondial Relay... =====
+    // Certains numéros sont ambigus (ex. 12 chiffres = produit OU FedEx) : les boutons
+    // transporteur sont alors ajoutés EN PLUS des boutons produit, à toi de choisir.
+    const CARRIERS = [
+      { name: "UPS", re: /^1Z[0-9A-Z]{16}$/, url: (v) => "https://www.ups.com/track?tracknum=" + encodeURIComponent(v) },
+      { name: "DHL", re: /^JD[0-9]{8,24}$/i, url: (v) => "https://www.dhl.com/fr-en/home/tracking.html?tracking-id=" + encodeURIComponent(v) },
+      { name: "DHL Express", re: /^\d{10}$/, url: (v) => "https://www.dhl.com/fr-en/home/tracking.html?tracking-id=" + encodeURIComponent(v) },
+      { name: "FedEx", re: /^\d{12}$/, url: (v) => "https://www.fedex.com/fedextrack/?trknbr=" + encodeURIComponent(v) },
+      { name: "Mondial Relay", re: /^\d{15}$/, url: (v) => "https://www.parcelsapp.com/fr/tracking/" + encodeURIComponent(v) },
+      { name: "Mondial Relay", re: /^\d{8}$/, url: (v) => "https://www.parcelsapp.com/fr/tracking/" + encodeURIComponent(v) }
+    ];
+    // Vrai numéro de livre ? (ISBN-10/13 avec clé de contrôle valide — sinon un
+    // numéro à 10 chiffres est probablement un colis DHL Express, pas un livre)
+    function isbnValid(s) {
+      const t = String(s).replace(/[- ]/g, "");
+      if (/^97[89]\d{10}$/.test(t)) {
+        let sum = 0;
+        for (let i = 0; i < 13; i++) sum += Number(t[i]) * (i % 2 === 0 ? 1 : 3);
+        return sum % 10 === 0;
+      }
+      if (/^\d{9}[\dXx]$/.test(t)) {
+        let sum = 0;
+        for (let i = 0; i < 10; i++) {
+          const c = (t[i] === "X" || t[i] === "x") ? 10 : Number(t[i]);
+          sum += c * (10 - i);
+        }
+        return sum % 11 === 0;
+      }
+      return false;
+    }
+
+    function carrierButtons(v) {
+      const out = [];
+      for (const c of CARRIERS) {
+        if (c.re.test(v)) out.push({ label: "📮 Suivre sur " + c.name, url: c.url(v) });
+      }
+      // Aucun transporteur identifié mais ça ressemble à un numéro de colis ->
+      // bouton universel (détecte tout seul le transporteur)
+      if (!out.length && /^[0-9A-Z][0-9A-Z ]{8,24}$/.test(v) && /\d{8,}/.test(v.replace(/ /g, ""))) {
+        out.push({ label: "📮 Suivre ce colis (tous transporteurs)", url: "https://www.parcelsapp.com/fr/tracking/" + encodeURIComponent(v) });
+      }
+      return out;
     }
 
     // ===== Détection du contenu : URL, prix produit, suivi postal, Wi-Fi =====
@@ -958,8 +1118,13 @@
         return b;
       };
       const showInfo = (t) => { info.textContent = t; info.style.display = "block"; };
+      const addCarrierButtons = () => { for (const c of carrierButtons(v)) addBtn(c.label, c.url); };
 
-      if (/^https?:\/\//i.test(v)) {
+      if (/^1Z[0-9A-Z]{16}$/.test(v) || /^JD[0-9]{8,24}$/i.test(v)) {
+        showInfo("📦 Numéro de colis détecté — " + (/^1Z/.test(v) ? "UPS" : "DHL"));
+        addCarrierButtons();
+      }
+      else if (/^https?:\/\//i.test(v)) {
         showInfo("🌐 Adresse web (URL) détectée");
         addBtn("🌐 Ouvrir le lien", v);
       }
@@ -980,7 +1145,7 @@
         showInfo("🚚 Numéro Chronopost/DPD détecté");
         addBtn("🚚 Suivre ce colis", "https://www.chronopost.fr/fr/suivi?keyword=" + encodeURIComponent(v));
       }
-      else if (/^(97[89]\d{10}|\d{9}[\dXx])$/.test(v.replace(/[- ]/g, ""))) {
+      else if (/^(97[89]\d{10}|\d{9}[\dXx])$/.test(v.replace(/[- ]/g, "")) && isbnValid(v)) {
         showInfo("📚 Numéro ISBN (livre) détecté");
         const isbn = v.replace(/[- ]/g, "");
         addBtn("🛒 Chercher le livre au meilleur prix", "https://www.google.com/search?tbm=shop&q=" + encodeURIComponent(isbn));
@@ -992,6 +1157,18 @@
         addBtn("🛒 Chercher le moins cher", "https://www.google.com/search?tbm=shop&q=" + encodeURIComponent(v));
         addBtn("🔎 Recherche générale", "https://www.google.com/search?q=" + encodeURIComponent(v));
         loadProductInfo(v);
+        // Ambiguïté possible : 12 chiffres = colis FedEx, 8 chiffres = colis Mondial Relay
+        addCarrierButtons();
+      }
+      else if (/^\d{10}$/.test(v)) {
+        showInfo("🔢 Numéro à 10 chiffres — possiblement un colis DHL Express");
+        addCarrierButtons();
+        addBtn("🔎 Recherche générale", "https://www.google.com/search?q=" + encodeURIComponent(v));
+      }
+      else if (/^\d{15}$/.test(v)) {
+        showInfo("📦 Numéro à 15 chiffres — possiblement un colis Mondial Relay");
+        addCarrierButtons();
+        addBtn("🔎 Recherche générale", "https://www.google.com/search?q=" + encodeURIComponent(v));
       }
       else if (/^mailto:/i.test(v)) addBtn("✉️ Écrire un email", v);
       else if (/^tel:/i.test(v)) addBtn("📞 Appeler", v);
@@ -1001,6 +1178,7 @@
       }
       else {
         addBtn("🔎 Chercher sur Google", "https://www.google.com/search?q=" + encodeURIComponent(v));
+        addCarrierButtons();
       }
     }
 
