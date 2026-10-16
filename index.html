@@ -19,6 +19,25 @@
   <script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.6/dist/JsBarcode.all.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/bwip-js@4.3.0/dist/bwip-js-min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js"></script>
+  <!-- Polyfill BarcodeDetector : apporte l'encadrement qui suit le code sur
+       Firefox et les navigateurs sans l'API native (moteur ZXing, tout local
+       après le premier chargement). Ne fait rien si l'API existe déjà. -->
+  <script>
+    (function () {
+      if ("BarcodeDetector" in window) return;
+      var load = function (url, onFail) {
+        var s = document.createElement("script");
+        s.src = url;
+        s.onerror = onFail;
+        document.head.appendChild(s);
+      };
+      load("https://cdn.jsdelivr.net/npm/barcode-detector-polyfill@0.1.2/dist/BarcodeDetector.min.js", function () {
+        load("https://unpkg.com/barcode-detector-polyfill@0.1.2/dist/BarcodeDetector.min.js", function () {
+          window.__noBDPolyfill = true; // aucun polyfill -> l'app affichera le message d'aide
+        });
+      });
+    })();
+  </script>
 
   <style>
     :root {
@@ -167,10 +186,7 @@
     <button id="start-btn">▶ Démarrer la caméra</button>
     <button class="secondary" id="stop-btn" style="display:none">⏹ Arrêter la caméra</button>
     <button class="secondary" id="flash-btn" style="display:none">🔦 Flash : auto</button>
-    <div id="zoom-row" style="display:none;margin-top:8px">
-      <button class="secondary" id="zoom-out-btn" style="margin:0 4px 0 0">➖ Zoom</button>
-      <button class="secondary" id="zoom-in-btn" style="margin:0">➕ Zoom</button>
-    </div>
+    <div class="hint" id="zoom-hint" style="display:none">🔍 Zoom automatique : l'app règle seule la mise au point et le niveau de zoom pour lire instantanément, même les petits codes.</div>
     <button class="secondary" id="ocr-btn">🔎 Lire le texte à côté du code (OCR)</button>
     <button class="secondary" id="ocr-free-btn">📄 OCR texte libre (photo)</button>
     <button class="secondary" id="fullscreen-btn">⛶ Caméra plein écran</button>
@@ -206,6 +222,7 @@
     <div id="repair-note" class="hint" style="display:none"></div>
     <div id="content-info" class="hint" style="display:none"></div>
     <div id="content-actions"></div>
+    <div id="product-info"></div>
 
     <div class="color-row">
       <span class="hint">Couleur :</span>
@@ -266,7 +283,7 @@
     let torchMode = localStorage.getItem("gscan-torch") || "auto";
     let torchTrack = null;
     let zoomTrack = null;
-    let zoomLevel = 0;
+    // (zoom auto : variables declarees plus bas avec setupZoom)
     let ocrWorker = null;
     let ocrBusy = false;
 
@@ -504,7 +521,36 @@
           ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
           ctx.clearRect(0, 0, w, h);
           const codes = await lensDetector.detect(video);
-          if (!codes || codes.length === 0) return;
+          if (!codes || codes.length === 0) {
+            // ===== Viseur avant détection (comme Google Lens) =====
+            const gw = w * 0.8, gh = h * 0.56;
+            const gx = (w - gw) / 2, gy = (h - gh) / 2;
+            const pulse = 0.5 + 0.5 * Math.sin(Date.now() / 600);
+            ctx.save();
+            ctx.setLineDash([9, 7]);
+            ctx.lineWidth = 2;
+            ctx.strokeStyle = "rgba(168,85,247," + (0.3 + 0.4 * pulse).toFixed(2) + ")";
+            lensRoundRect(ctx, gx, gy, gw, gh, 18);
+            ctx.stroke();
+            ctx.setLineDash([]);
+            const CL = 28;
+            [[gx, gy, 1, 1], [gx + gw, gy, -1, 1], [gx + gw, gy + gh, -1, -1], [gx, gy + gh, 1, -1]].forEach(function (c) {
+              ctx.beginPath();
+              ctx.moveTo(c[0] + c[2] * CL, c[1]);
+              ctx.lineTo(c[0], c[1]);
+              ctx.lineTo(c[0], c[1] + c[3] * CL);
+              ctx.strokeStyle = "rgba(34,211,238,0.9)";
+              ctx.lineWidth = 4;
+              ctx.stroke();
+            });
+            ctx.font = "600 13px system-ui, sans-serif";
+            ctx.textAlign = "center";
+            ctx.fillStyle = "rgba(233,213,255," + (0.7 + 0.3 * pulse).toFixed(2) + ")";
+            ctx.fillText("Vise un QR, un code-barres ou un DataMatrix", w / 2, gy - 14);
+            ctx.restore();
+            return;
+          }
+          lastLensDetection = Date.now(); // un code est suivi : le zoom auto se fige
           const vRect = video.getBoundingClientRect();
           const cRect = canvas.getBoundingClientRect();
           const sx = vRect.width / (video.videoWidth || 1);
@@ -560,14 +606,20 @@
       })();
     }
 
-    function lensStart(video) {
+    async function lensStart(video) {
       lensStop();
       const hint = document.getElementById("lens-hint");
-      if (!("BarcodeDetector" in window)) {
-        if (hint) {
-          hint.textContent = "ℹ️ L'encadrement qui suit le code n'est pas disponible sur ce navigateur (essaie Chrome) — le scan fonctionne quand même.";
-          hint.style.display = "block";
+      // Attend l'API native OU le polyfill (CDN parfois lent à la 1re visite)
+      if (!("BarcodeDetector" in window) && !window.__noBDPolyfill) {
+        hint.textContent = "⏳ Chargement du module d'encadrement...";
+        hint.style.display = "block";
+        for (let i = 0; i < 15 && !("BarcodeDetector" in window) && !window.__noBDPolyfill; i++) {
+          await new Promise(r => setTimeout(r, 200));
         }
+      }
+      if (!("BarcodeDetector" in window)) {
+        hint.textContent = "ℹ️ L'encadrement qui suit le code n'est pas disponible sur CE navigateur (utilise Chrome ou Safari récent) — mais le scan et le zoom automatique fonctionnent quand même.";
+        hint.style.display = "block";
         return;
       }
       if (hint) hint.style.display = "none";
@@ -589,11 +641,9 @@
       html5QrCode = new Html5Qrcode("reader");
       try {
         await html5QrCode.start(
-          { facingMode: "environment" },
+          { facingMode: "environment", width: { ideal: 1920 }, height: { ideal: 1080 }, frameRate: { ideal: 30 } },
           {
-            fps: 10,
-            qrbox: { width: 280, height: 200 },
-            aspectRatio: 1.4,
+            fps: 15,
             formatsToSupport: [
               Html5QrcodeSupportedFormats.QR_CODE,
               Html5QrcodeSupportedFormats.EAN_13,
@@ -614,6 +664,7 @@
           (decoded) => {
             if (navigator.vibrate) navigator.vibrate(150);
             lensStop();
+            stopAutoZoom();
             showResult(decoded);
             html5QrCode.stop().then(() => {
               document.getElementById("stop-btn").style.display = "none";
@@ -654,6 +705,7 @@
     document.getElementById("stop-btn").onclick = () => {
       if (html5QrCode) {
         lensStop();
+        stopAutoZoom();
         stopAutoTorch();
         applyTorch(false);
         torchTrack = null;
@@ -749,38 +801,59 @@
     };
 
     // ===== Zoom =====
-    function setupZoom(video) {
-      const track = video && video.srcObject ? video.srcObject.getVideoTracks()[0] : null;
-      if (!track) return;
-      let caps = {};
-      try { caps = track.getCapabilities() || {}; } catch (e) {}
-      if (!caps.zoom) { document.getElementById("zoom-row").style.display = "none"; return; }
-      zoomTrack = track;
-      zoomLevel = Math.min(caps.zoom.max, Math.max(caps.zoom.min, (caps.zoom.min + caps.zoom.max) / 2));
-      applyZoom();
-      document.getElementById("zoom-row").style.display = "flex";
+    // ===== Zoom automatique =====
+    // Plus de boutons +/− : l'app règle toute seule la mise au point et le zoom.
+    // Tant qu'aucun code n'est repéré, elle essaie un nouveau palier toutes les
+    // 2,5 s (vue large -> moyenne -> serrée) pour lire instantanément même les
+    // petits codes (DataMatrix, timbres...). Dès qu'un code est suivi ou lu,
+    // elle garde le palier qui marche.
+    let zoomSteps = [];
+    let zoomStepIdx = 0;
+    let autoZoomTimer = null;
+    let lastLensDetection = 0;
+
+    function stopAutoZoom() {
+      if (autoZoomTimer) { clearInterval(autoZoomTimer); autoZoomTimer = null; }
     }
 
-    function applyZoom() {
+    function applyZoomLevel(z) {
       if (!zoomTrack) return;
       try {
-        zoomTrack.applyConstraints({ advanced: [{ zoom: zoomLevel }] }).catch(() => {});
+        zoomTrack.applyConstraints({ advanced: [{ zoom: z }] }).catch(() => {});
       } catch (e) {}
     }
 
-    document.getElementById("zoom-in-btn").onclick = () => {
-      if (!zoomTrack) return;
-      const caps = zoomTrack.getCapabilities();
-      zoomLevel = Math.min(caps.zoom.max, zoomLevel + (caps.zoom.step || 50));
-      applyZoom();
-    };
+    function setupZoom(video) {
+      const track = video && video.srcObject ? video.srcObject.getVideoTracks()[0] : null;
+      if (!track) return;
+      zoomTrack = track;
+      // Mise au point continue (si la caméra le permet)
+      try {
+        track.applyConstraints({ advanced: [{ focusMode: "continuous" }] }).catch(() => {});
+      } catch (e) {}
+      // Paliers de zoom automatiques
+      let caps = {};
+      try { caps = track.getCapabilities() || {}; } catch (e) {}
+      if (!caps.zoom || caps.zoom.max === undefined) {
+        document.getElementById("zoom-hint").textContent = "🔍 Zoom automatique : le zoom matériel n'est pas disponible sur cet appareil — l'app utilise la résolution maximale à la place.";
+        document.getElementById("zoom-hint").style.display = "block";
+        return;
+      }
+      const zmin = caps.zoom.min || 1;
+      const zmax = caps.zoom.max || 1;
+      const zmid = zmin + (zmax - zmin) * 0.5;
+      zoomSteps = [zmin, Math.min(zmid, zmin + (zmax - zmin) * 0.45), zmax];
+      zoomStepIdx = 0;
+      applyZoomLevel(zoomSteps[0]);
+      document.getElementById("zoom-hint").style.display = "block";
+      autoZoomTimer = setInterval(() => {
+        if (Date.now() - lastLensDetection < 3000) return; // un code est suivi : on garde le zoom
+        zoomStepIdx = (zoomStepIdx + 1) % zoomSteps.length;
+        applyZoomLevel(zoomSteps[zoomStepIdx]);
+      }, 2500);
+    }
 
-    document.getElementById("zoom-out-btn").onclick = () => {
-      if (!zoomTrack) return;
-      const caps = zoomTrack.getCapabilities();
-      zoomLevel = Math.max(caps.zoom.min, zoomLevel - (caps.zoom.step || 50));
-      applyZoom();
-    };
+    // (Les boutons Zoom + / − ont été remplacés par le zoom automatique.)
 
     // ===== OCR =====
     document.getElementById("ocr-btn").onclick = () => ocrFromCamera();
@@ -873,6 +946,7 @@
       const actions = document.getElementById("content-actions");
       info.style.display = "none";
       actions.innerHTML = "";
+      document.getElementById("product-info").innerHTML = "";
       const v = String(value).trim();
 
       const addBtn = (label, url) => {
@@ -911,16 +985,103 @@
         const isbn = v.replace(/[- ]/g, "");
         addBtn("🛒 Chercher le livre au meilleur prix", "https://www.google.com/search?tbm=shop&q=" + encodeURIComponent(isbn));
         addBtn("🔎 Recherche générale", "https://www.google.com/search?q=" + encodeURIComponent(isbn));
+        loadBookInfo(isbn);
       }
       else if (/^\d{8}$|^\d{12,14}$/.test(v)) {
-        showInfo("📦 Code produit détecté — tu peux chercher son prix et ses infos");
+        showInfo("📦 Code produit détecté — recherche des infos produit...");
         addBtn("🛒 Chercher le moins cher", "https://www.google.com/search?tbm=shop&q=" + encodeURIComponent(v));
-        addBtn("🥫 Infos produit (alimentaire)", "https://world.openfoodfacts.org/product/" + encodeURIComponent(v));
         addBtn("🔎 Recherche générale", "https://www.google.com/search?q=" + encodeURIComponent(v));
+        loadProductInfo(v);
       }
       else if (/^mailto:/i.test(v)) addBtn("✉️ Écrire un email", v);
       else if (/^tel:/i.test(v)) addBtn("📞 Appeler", v);
-      else if (/^SD\d{6,}/i.test(v)) showInfo("🔗 Identifiant Smart Data détecté");
+      else if (/^SD\d{6,}/i.test(v)) {
+        showInfo("🔗 Identifiant Smart Data détecté");
+        addBtn("🔎 Chercher ce code sur Google", "https://www.google.com/search?q=" + encodeURIComponent(v));
+      }
+      else {
+        addBtn("🔎 Chercher sur Google", "https://www.google.com/search?q=" + encodeURIComponent(v));
+      }
+    }
+
+    // ===== Infos produit : bases libres Open Food Facts (alimentaire),
+    // Open Beauty Facts (soins, bougies, ménager), Open Products Facts (le reste) =====
+    const esc = (s) => String(s || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+    const SCORE_COLORS = { a: "#038141", b: "#85bb2f", c: "#fecb02", d: "#ee8100", e: "#e63e09", unknown: "#9ca3af" };
+
+    function scoreChip(letter, legend) {
+      const c = SCORE_COLORS[String(letter || "").toLowerCase()] || SCORE_COLORS.unknown;
+      return "<span style='display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;border-radius:7px;background:" + c + ";color:#fff;font-weight:800;font-size:15px;margin-right:5px'>" + esc((letter || "?").toUpperCase()) + "</span>" +
+        "<span style='font-size:12px;color:#c4b5fd;margin-right:12px'>" + esc(legend) + "</span>";
+    }
+
+    async function loadProductInfo(barcode) {
+      const zone = document.getElementById("product-info");
+      zone.innerHTML = "<p class='hint'>⏳ Recherche des infos produit sur les bases libres...</p>";
+      const sources = [
+        { url: "https://world.openfoodfacts.org/api/v2/product/" + barcode + ".json", label: "Open Food Facts (alimentaire)" },
+        { url: "https://world.openbeautyfacts.org/api/v2/product/" + barcode + ".json", label: "Open Beauty Facts (soins, bougies, ménager)" },
+        { url: "https://world.openproductsfacts.org/api/v2/product/" + barcode + ".json", label: "Open Products Facts (tous produits)" }
+      ];
+      for (const src of sources) {
+        try {
+          const r = await fetch(src.url);
+          if (!r.ok) continue;
+          const j = await r.json();
+          if (j && j.status === 1 && j.product) { renderProductCard(j.product, src.label, barcode); return; }
+        } catch (e) { /* réseau indisponible -> source suivante */ }
+      }
+      zone.innerHTML = "<p class='hint'>ℹ️ Produit inconnu dans les bases libres. Utilise les boutons de prix et de recherche ci-dessus.</p>";
+    }
+
+    function renderProductCard(p, source, barcode) {
+      const zone = document.getElementById("product-info");
+      const img = p.image_front_small_url || p.image_url || "";
+      let chips = "";
+      if (p.nutriscore_grade) chips += scoreChip(p.nutriscore_grade, "Nutri-Score");
+      if (p.ecoscore_grade) chips += scoreChip(p.ecoscore_grade, "Éco-Score");
+      if (p.nova_group) chips += "<span style='display:inline-flex;align-items:center;height:28px;padding:0 10px;border-radius:7px;background:#7c3aed;color:#fff;font-weight:700;font-size:13px;margin-right:12px'>NOVA " + esc(p.nova_group) + "</span>";
+      if (!chips) chips = "<span style='font-size:12px;color:#9ca3af'>Pas de score disponible pour ce produit</span>";
+      const cats = p.categories ? String(p.categories).split(",")[0] : "";
+      const categ = p.categories_tags && p.categories_tags.length ? String(p.categories_tags[p.categories_tags.length - 1]).split(":")[1].replace(/-/g, " ") : cats;
+      zone.innerHTML =
+        "<div style='display:flex;gap:12px;margin-top:12px;padding:12px;border:1px solid rgba(168,85,247,0.35);border-radius:12px;background:rgba(255,255,255,0.04);align-items:flex-start'>" +
+        (img ? "<img src='" + esc(img) + "' alt='' style='width:64px;height:64px;object-fit:contain;border-radius:8px;background:#fff;flex-shrink:0'>" : "") +
+        "<div style='flex:1;min-width:0'>" +
+        "<div style='font-weight:700;color:#ede9fe;word-break:break-word'>" + esc(p.product_name || "(nom inconnu)") + "</div>" +
+        (p.brands ? "<div style='color:#a78bfa;font-size:13px;margin-top:2px'>🏷️ " + esc(p.brands) + "</div>" : "") +
+        (p.quantity ? "<div style='color:#9ca3af;font-size:12px;margin-top:2px'>⚖️ " + esc(p.quantity) + "</div>" : "") +
+        (categ ? "<div style='color:#9ca3af;font-size:12px;margin-top:2px'>📦 " + esc(categ) + "</div>" : "") +
+        "<div style='margin-top:8px;display:flex;flex-wrap:wrap;align-items:center'>" + chips + "</div>" +
+        "<div style='color:#6b7280;font-size:11px;margin-top:8px'>Source : " + esc(source) + " · " + esc(barcode) + "</div>" +
+        "</div></div>";
+    }
+
+    // ===== Infos livre (Google Books) =====
+    async function loadBookInfo(isbn) {
+      const zone = document.getElementById("product-info");
+      zone.innerHTML = "<p class='hint'>⏳ Recherche du livre sur Google Books...</p>";
+      try {
+        const r = await fetch("https://www.googleapis.com/books/v1/volumes?q=isbn:" + isbn);
+        const j = await r.json();
+        const it = j && j.items && j.items[0] && j.items[0].volumeInfo;
+        if (it) {
+          const img = (it.imageLinks && (it.imageLinks.thumbnail || it.imageLinks.smallThumbnail)) || "";
+          zone.innerHTML =
+            "<div style='display:flex;gap:12px;margin-top:12px;padding:12px;border:1px solid rgba(168,85,247,0.35);border-radius:12px;background:rgba(255,255,255,0.04);align-items:flex-start'>" +
+            (img ? "<img src='" + esc(img) + "' alt='' style='width:64px;height:96px;object-fit:contain;border-radius:8px;background:#fff;flex-shrink:0'>" : "") +
+            "<div style='flex:1;min-width:0'>" +
+            "<div style='font-weight:700;color:#ede9fe'>📖 " + esc(it.title || "(titre inconnu)") + "</div>" +
+            (it.authors ? "<div style='color:#a78bfa;font-size:13px;margin-top:2px'>✍️ " + esc(it.authors.join(", ")) + "</div>" : "") +
+            (it.publisher ? "<div style='color:#9ca3af;font-size:12px;margin-top:2px'>🏢 " + esc(it.publisher) + "</div>" : "") +
+            (it.publishedDate ? "<div style='color:#9ca3af;font-size:12px;margin-top:2px'>📅 " + esc(it.publishedDate) + "</div>" : "") +
+            (it.pageCount ? "<div style='color:#9ca3af;font-size:12px;margin-top:2px'>📄 " + esc(it.pageCount) + " pages</div>" : "") +
+            "<div style='color:#6b7280;font-size:11px;margin-top:8px'>Source : Google Books · " + esc(isbn) + "</div>" +
+            "</div></div>";
+          return;
+        }
+      } catch (e) { /* réseau indisponible */ }
+      zone.innerHTML = "<p class='hint'>ℹ️ Livre introuvable sur Google Books — utilise les boutons de prix ci-dessus.</p>";
     }
 
     // ===== Copier =====
