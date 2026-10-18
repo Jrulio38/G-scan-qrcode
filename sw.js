@@ -1,4 +1,4 @@
-const CACHE_NAME = 'g-scan-qrcode-v12';
+const CACHE_NAME = 'g-scan-qrcode-v14';
 const ASSETS = [
   './',
   './index.html',

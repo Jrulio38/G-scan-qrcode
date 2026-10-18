@@ -212,6 +212,22 @@
     <div id="nfc-status" class="hint" style="display:none"></div>
   </div>
 
+  <!-- ANALYSE IA (moteur IA-G-scan intégré) -->
+  <div class="card">
+    <strong>🤖 Analyse IA intégrée</strong>
+    <p class="hint">Analyse profonde d'une photo : tous les codes (même abîmés ou mal éclairés) + le texte imprimé à côté, avec classification et meilleur format de régénération. Utile quand une photo ne se scanne pas.</p>
+    <div id="ia-drop" style="border:2px dashed rgba(168,85,247,.55);border-radius:12px;padding:20px 12px;text-align:center;cursor:pointer;margin:8px 0">
+      <div style="font-size:1.8rem">🖼️</div>
+      <div><b>Glisse une photo ici</b> ou appuie pour en choisir une</div>
+      <div class="hint">étiquette, colis, timbre, QR abîmé…</div>
+    </div>
+    <input type="file" id="ia-file" accept="image/*" capture="environment" style="display:none">
+    <button class="secondary" id="ia-cam-btn">📸 Analyser une photo</button>
+    <div id="ia-status" class="hint" style="display:none"></div>
+    <div id="ia-results"></div>
+    <p class="hint">💡 L'app sœur <a href="https://jrulio38.github.io/IA-G-scan/" target="_blank" rel="noopener">IA-G-scan</a> reste disponible en extension pour les analyses manuelles détaillées (suggestions, historique d'analyses). ⚠️ Le moteur OCR se télécharge la 1<sup>re</sup> fois (connexion internet nécessaire une fois).</p>
+  </div>
+
   <!-- GENERATE -->
   <div class="card">
     <strong>Générer un code</strong>
@@ -857,20 +873,253 @@
         const result = await photoScanner.scanFile(file, true);
         showResult(result);
       } catch (err) {
-        // Aucun code détecté : tenter une lecture OCR (type Google Lens)
-        try {
+        // Aucun code détecté : IA-G-scan analyse en arrière-plan (transparent),
+        // puis repli OCR local si l'app sœur ne trouve rien.
+        showOcrProgress("Photo sans code — 🤖 IA-G-scan analyse en arrière-plan…");
+        iaDeepAnalyze(file, (items) => {
+          if (items && items.length) { iaShowItems(items); return; }
           showOcrProgress("Photo sans code — analyse OCR");
-          await ocrFromPhoto(file);
-        } catch (e2) {
-          alert("Aucun code ni texte trouvé dans l'image.\nEssaie avec une photo plus nette ou mieux cadrée.");
-        }
+          ocrFromPhoto(file).catch((e2) => {
+            alert("Aucun code ni texte trouvé dans l'image.\nEssaie avec une photo plus nette ou mieux cadrée.\n\n💡 L'app sœur IA-G-scan n'a rien trouvé non plus cette fois-ci (ou n'est pas encore installée).");
+          });
+        });
       } finally {
         // On vide le champ après usage
         e.target.value = "";
       }
     };
 
-    // ===== Binôme IA-G-scan : réception d'une valeur envoyée =====
+    // ===== MOTEUR IA INTÉGRÉ (fusion IA-G-scan) =====
+    // L'analyse profonde (codes sur image brute + contrastée + OCR avec
+    // netteté renforcée + classification + meilleur format) tourne
+    // MAINTENANT À L'INTÉRIEUR de l'app : plus rapide, plus fiable,
+    // 100 % sur ton appareil. L'app sœur IA-G-scan reste disponible en
+    // extension pour les analyses manuelles détaillées.
+    const IA_EXT_URL = "https://jrulio38.github.io/IA-G-scan/";
+    let iaBusy = false;
+    let iaWorker = null;
+
+    // Classification : nature du contenu + MEILLEUR format de régénération
+    const IA_FORMATS = [
+      { re: /^SD\d{6,}/i, icon: "🔗", type: "Smart Data La Poste", fmt: "dm", why: "Format d'origine des Smart Data : compact et robuste." },
+      { re: /^SMARD/i, icon: "🔗", type: "Smart Data La Poste", fmt: "dm", why: "Format d'origine des Smart Data : compact et robuste." },
+      { re: /^[A-Z]{2}\d{9}[A-Z]{2}$/i, icon: "📮", type: "Suivi postal international", fmt: "qr", why: "Le QR est universel et se lit même abîmé sur téléphone." },
+      { re: /^1[A-Z]\s?\d{3}\s?\d{3}\s?\d{3}(\s?\d)?$/i, icon: "🚚", type: "Chronopost (n° 1A…)", fmt: "dm", why: "Chronopost imprime ses étiquettes en DataMatrix." },
+      { re: /^1Z[0-9A-Z]{16}$/i, icon: "📦", type: "UPS", fmt: "barcode", why: "UPS utilise le Code 128 sur ses étiquettes." },
+      { re: /^(JD|JJD)[0-9A-Z]+$/i, icon: "📦", type: "DHL", fmt: "barcode", why: "DHL utilise le Code 128 sur ses étiquettes." },
+      { re: /^\d{12}$/, icon: "📦", type: "Colis 12 chiffres (FedEx…)", fmt: "barcode", why: "Code 128 : standard des transporteurs." },
+      { re: /^\d{14}$/, icon: "📦", type: "Colis 14 chiffres (DPD…)", fmt: "barcode", why: "Code 128 : standard des transporteurs." },
+      { re: /^\d{8}$/, icon: "📦", type: "Colis 8 chiffres (Colis Privé…)", fmt: "barcode", why: "Code 128 : standard des transporteurs." },
+      { re: /^WIFI:/i, icon: "📶", type: "Wi-Fi", fmt: "qr", why: "Les téléphones scannent les QR Wi-Fi nativement." },
+      { re: /^(MECARD:|BEGIN:VCARD)/i, icon: "👤", type: "Contact", fmt: "qr", why: "Les contacts se partagent en QR." },
+      { re: /^(https?:\/\/)/i, icon: "🌐", type: "Lien web", fmt: "qr", why: "Le QR ouvre le lien en un scan." },
+      { re: /^(tel:|mailto:)/i, icon: "📞", type: "Téléphone / e-mail", fmt: "qr", why: "Le QR déclenche l'appel ou le mail." },
+      { re: /^(97[89])\d{10}$/, icon: "📚", type: "ISBN (livre)", fmt: "barcode", why: "Les livres sont imprimés en EAN-13." },
+      { re: /^\d{13}$/, icon: "🥫", type: "Produit (EAN-13)", fmt: "barcode", why: "C'est le format imprimé sur les produits." }
+    ];
+    function iaClassify(v) {
+      v = String(v || "").trim();
+      for (const c of IA_FORMATS) { if (c.re.test(v)) return c; }
+      if (/^\d{10,}$/.test(v)) return { icon: "📦", type: "Numéro (colis probable)", fmt: "dm", why: "DataMatrix : compact, idéal pour un numéro long." };
+      return { icon: "📝", type: "Texte libre", fmt: "qr", why: "Le QR accepte n'importe quel texte." };
+    }
+    const IA_FMT_LABEL = { qr: "QR Code", barcode: "Code-barres", dm: "DataMatrix" };
+
+    // Pré-traitement image : contraste (+ netteté en 2e passe)
+    function iaPreprocess(srcCanvas, mode) {
+      const c = document.createElement("canvas");
+      const k = Math.min(2, Math.max(1, 1400 / (srcCanvas.width || 1)));
+      c.width = Math.max(1, Math.round(srcCanvas.width * k));
+      c.height = Math.max(1, Math.round(srcCanvas.height * k));
+      const ctx = c.getContext("2d");
+      ctx.imageSmoothingEnabled = true;
+      ctx.drawImage(srcCanvas, 0, 0, c.width, c.height);
+      const img = ctx.getImageData(0, 0, c.width, c.height);
+      const d = img.data;
+      let lo = 255, hi = 0;
+      for (let i = 0; i < d.length; i += 4) {
+        const g = 0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2];
+        d[i] = d[i + 1] = d[i + 2] = g;
+        if (g < lo) lo = g; if (g > hi) hi = g;
+      }
+      const range = Math.max(1, hi - lo);
+      for (let i = 0; i < d.length; i += 4) {
+        const g = Math.min(255, Math.max(0, (d[i] - lo) * 255 / range));
+        d[i] = d[i + 1] = d[i + 2] = g;
+      }
+      if (mode === "sharp") {
+        const w = c.width, h = c.height;
+        const copy = new Uint8ClampedArray(d);
+        for (let y = 1; y < h - 1; y++) for (let x = 1; x < w - 1; x++) {
+          const i = (y * w + x) * 4;
+          let blur = 0, n = 0;
+          for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) { blur += copy[((y + dy) * w + (x + dx)) * 4]; n++; }
+          blur /= n;
+          const v = copy[i] + 0.8 * (copy[i] - blur);
+          d[i] = d[i + 1] = d[i + 2] = Math.min(255, Math.max(0, v));
+        }
+      }
+      ctx.putImageData(img, 0, 0);
+      return c;
+    }
+
+    async function iaDetectCodes(canvas) {
+      const out = [];
+      if (!("BarcodeDetector" in window)) return out;
+      try {
+        const det = new BarcodeDetector();
+        const codes = await det.detect(canvas);
+        (codes || []).forEach(cd => {
+          const v = String(cd.rawValue || "").trim();
+          if (v && !out.some(o => o.value === v)) out.push({ value: v, source: "code", format: cd.format || "" });
+        });
+      } catch (e) {}
+      return out;
+    }
+
+    async function iaOcrRead(canvas) {
+      if (typeof Tesseract === "undefined") return "";
+      try {
+        if (!iaWorker) {
+          try { iaWorker = await Tesseract.createWorker("eng+fra"); }
+          catch (e) { iaWorker = await Tesseract.createWorker("eng"); }
+        }
+        const r = await iaWorker.recognize(canvas.toDataURL("image/png"));
+        return String((r && r.data && r.data.text) || "");
+      } catch (e) { return ""; }
+    }
+
+    function iaExtractCandidates(text) {
+      const out = [];
+      const push = v => { v = String(v).replace(/\s+/g, ""); if (v.length >= 8 && !out.includes(v)) out.push(v); };
+      (String(text || "").match(/[A-Z]{2}\d{9}[A-Z]{2}/gi) || []).forEach(push);
+      (String(text || "").match(/1[A-Z]\s?\d{3}\s?\d{3}\s?\d{3}(\s?\d)?/gi) || []).forEach(push);
+      (String(text || "").match(/SD\s*:?\s*[0-9A-Z]{8,}/gi) || []).forEach(m => push(m.replace(/SD\s*:?\s*/i, "SD")));
+      (String(text || "").match(/1Z[0-9A-Z]{16}/gi) || []).forEach(push);
+      (String(text || "").match(/\b[0-9]{8,14}\b/g) || []).forEach(push);
+      return out.slice(0, 6);
+    }
+
+    function iaFileToImage(file, cb) {
+      const url = URL.createObjectURL(file);
+      const img = new Image();
+      img.onload = () => {
+        try {
+          const maxDim = 1600;
+          const k = Math.min(1, maxDim / Math.max(img.width, img.height));
+          const c = document.createElement("canvas");
+          c.width = Math.max(1, Math.round(img.width * k));
+          c.height = Math.max(1, Math.round(img.height * k));
+          c.getContext("2d").drawImage(img, 0, 0, c.width, c.height);
+          URL.revokeObjectURL(url);
+          cb(c);
+        } catch (e) { URL.revokeObjectURL(url); cb(null); }
+      };
+      img.onerror = () => { URL.revokeObjectURL(url); cb(null); };
+      img.src = url;
+    }
+
+    async function iaAnalyzeCanvas(base) {
+      let items = await iaDetectCodes(base);
+      const prep = iaPreprocess(base, "contrast");
+      (await iaDetectCodes(prep)).forEach(f => { if (!items.some(o => o.value === f.value)) items.push(f); });
+      let text = await iaOcrRead(prep);
+      let cands = iaExtractCandidates(text);
+      if (cands.length === 0) {
+        const sharp = iaPreprocess(base, "sharp");
+        cands = iaExtractCandidates(await iaOcrRead(sharp));
+      }
+      cands.forEach(v => { if (!items.some(o => o.value === v)) items.push({ value: v, source: "ocr", format: "" }); });
+      return items;
+    }
+
+    // Analyse transparente (photo sans code) : moteur interne direct
+    function iaDeepAnalyze(file, cb) {
+      if (iaBusy) { cb(null); return; }
+      iaBusy = true;
+      iaFileToImage(file, (c) => {
+        if (!c) { iaBusy = false; cb(null); return; }
+        iaAnalyzeCanvas(c).then((items) => { iaBusy = false; cb(items); })
+          .catch(() => { iaBusy = false; cb(null); });
+      });
+    }
+
+    function iaShowItems(items) {
+      document.getElementById("ocr-status").style.display = "none";
+      const cls = iaClassify(items[0].value);
+      showResult(items[0].value, cls.fmt);
+      const note = document.getElementById("repair-note");
+      note.textContent = "🤖 Trouvé par l'IA intégrée (analyse approfondie en arrière-plan) — résultat renvoyé automatiquement, format conseillé : " + IA_FMT_LABEL[cls.fmt] + "." + (items.length > 1 ? " " + items.length + " valeurs détectées, la meilleure est affichée, les autres sont dans l'historique." : "");
+      note.style.display = "block";
+      if (items.length > 1) items.slice(1).forEach((it) => { try { addToHistory(it.value); } catch (e) {} });
+    }
+
+    // ===== Carte « Analyse IA » : analyse manuelle avec résultats détaillés =====
+    function iaHandleFile(file) {
+      if (!file || !/^image\//.test(file.type)) { alert("Choisis une image (photo, capture…)."); return; }
+      const status = document.getElementById("ia-status");
+      status.textContent = "🔎 Analyse IA en cours (codes + texte imprimé)…";
+      status.style.display = "block";
+      iaFileToImage(file, (c) => {
+        if (!c) { status.textContent = "⚠️ Image illisible — réessaie avec une autre photo."; return; }
+        iaAnalyzeCanvas(c).then((items) => {
+          const zone = document.getElementById("ia-results");
+          zone.innerHTML = "";
+          if (!items.length) {
+            status.textContent = "ℹ️ Rien trouvé cette fois-ci. Essaie une photo plus proche, mieux éclairée, ou ouvre l'extension IA-G-scan.";
+            return;
+          }
+          status.textContent = "✅ " + items.length + " valeur" + (items.length > 1 ? "s" : "") + " détectée" + (items.length > 1 ? "s" : "") + " :";
+          items.forEach((it) => {
+            const cls = iaClassify(it.value);
+            const div = document.createElement("div");
+            div.style.cssText = "border:1px solid rgba(34,211,238,.3);border-radius:10px;padding:10px;margin:8px 0";
+            const head = document.createElement("div");
+            head.style.cssText = "font-weight:600;display:flex;align-items:center;gap:8px;flex-wrap:wrap";
+            const val = document.createElement("span");
+            val.textContent = it.value;
+            val.style.cssText = "font-family:ui-monospace,monospace;word-break:break-all";
+            const tag = document.createElement("span");
+            tag.textContent = cls.icon + " " + cls.type + (it.source === "ocr" ? " · lu par OCR" : "");
+            tag.style.cssText = "font-size:.72rem;background:rgba(34,211,238,.12);border-radius:6px;padding:2px 8px";
+            head.appendChild(val); head.appendChild(tag);
+            div.appendChild(head);
+            const why = document.createElement("div");
+            why.className = "hint";
+            why.textContent = "💡 " + cls.why + " Recommandé : " + IA_FMT_LABEL[cls.fmt] + ".";
+            div.appendChild(why);
+            const row = document.createElement("div");
+            row.style.marginTop = "6px";
+            const bCopy = document.createElement("button");
+            bCopy.className = "secondary"; bCopy.textContent = "📋 Copier";
+            bCopy.onclick = () => { navigator.clipboard.writeText(it.value).then(() => { bCopy.textContent = "✓ Copié"; }); };
+            const bRegen = document.createElement("button");
+            bRegen.className = "secondary"; bRegen.style.marginLeft = "6px";
+            bRegen.textContent = "✨ Régénérer (" + IA_FMT_LABEL[cls.fmt] + ")";
+            bRegen.onclick = () => {
+              showResult(it.value, cls.fmt);
+              document.getElementById("result-area").scrollIntoView({ behavior: "smooth" });
+            };
+            row.appendChild(bCopy); row.appendChild(bRegen);
+            div.appendChild(row);
+            zone.appendChild(div);
+          });
+        }).catch(() => { status.textContent = "⚠️ Analyse interrompue — réessaie."; });
+      });
+    }
+    (function () {
+      const drop = document.getElementById("ia-drop");
+      const input = document.getElementById("ia-file");
+      if (!drop || !input) return;
+      drop.onclick = () => input.click();
+      document.getElementById("ia-cam-btn").onclick = () => input.click();
+      input.onchange = (e) => { if (e.target.files[0]) iaHandleFile(e.target.files[0]); e.target.value = ""; };
+      ["dragenter", "dragover"].forEach(ev => drop.addEventListener(ev, (e) => { e.preventDefault(); drop.style.borderColor = "#22d3ee"; }));
+      ["dragleave", "drop"].forEach(ev => drop.addEventListener(ev, (e) => { e.preventDefault(); drop.style.borderColor = "rgba(168,85,247,.55)"; }));
+      drop.addEventListener("drop", (e) => { const f = e.dataTransfer.files[0]; if (f) iaHandleFile(f); });
+    })();
+
+        // ===== Binôme IA-G-scan : réception d'une valeur envoyée =====
     (function () {
       try {
         const raw = localStorage.getItem("gscan_handoff");
