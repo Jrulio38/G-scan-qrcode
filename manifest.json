@@ -1,1 +1,14 @@
-ewogICJuYW1lIjogIkctc2NhbiDigJQgU2Nhbm5lciBpbnRlbGxpZ2VudCIsCiAgInNob3J0X25hbWUiOiAiRy1zY2FuIiwKICAiZGVzY3JpcHRpb24iOiAiU2Nhbm5lciBRUiwgY29kZXMtYmFycmVzLCBEYXRhTWF0cml4ICsgYW5hbHlzZSBJQSBsb2NhbGUgKyBpbmZvcyBwcm9kdWl0IOKAlCB0b3V0IGVuIHVuIiwKICAic3RhcnRfdXJsIjogIi4vIiwKICAic2NvcGUiOiAiLi8iLAogICJkaXNwbGF5IjogInN0YW5kYWxvbmUiLAogICJvcmllbnRhdGlvbiI6ICJwb3J0cmFpdCIsCiAgImJhY2tncm91bmRfY29sb3IiOiAiIzBhMDgxNyIsCiAgInRoZW1lX2NvbG9yIjogIiMwYTA4MTciLAogICJpY29ucyI6IFsKICAgIHsgInNyYyI6ICIuL2ljb24uc3ZnIiwgInNpemVzIjogImFueSIsICJ0eXBlIjogImltYWdlL3N2Zyt4bWwiLCAicHVycG9zZSI6ICJhbnkiIH0KICBdCn0K
+{
+  "name": "G-scan — Scanner intelligent",
+  "short_name": "G-scan",
+  "description": "Scanner QR, codes-barres, DataMatrix + analyse IA locale + infos produit — tout en un",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#0a0817",
+  "theme_color": "#0a0817",
+  "icons": [
+    { "src": "./icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }
+  ]
+}

@@ -12,7 +12,7 @@
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='22' fill='%237c3aed'/><text y='68' x='50' text-anchor='middle' font-size='52' font-weight='800' fill='white' font-family='system-ui'>G</text></svg>">
 
   <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.3/lib/browser.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.3/lib/browser.min.js" onerror="this.onerror=null;document.write(String.fromCharCode(60)+String.fromCharCode(115)+String.fromCharCode(99)+'ript src="https://unpkg.com/qrcode@1.5.3/lib/browser.min.js">'+String.fromCharCode(60)+String.fromCharCode(47)+'script>')"></script>
   <script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.6/dist/JsBarcode.all.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/bwip-js@4.3.0/dist/bwip-js-min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js"></script>
@@ -159,6 +159,13 @@
       display: none;
     }
     #reader { width: 100%; }
+    #live-video {
+      width: 100%;
+      max-height: 70vh;
+      object-fit: cover;
+      display: block;
+      background: #000;
+    }
     #reader video {
       width: 100% !important;
       height: auto !important;
@@ -370,6 +377,7 @@
       </div>
 
       <div id="reader-wrap">
+        <video id="live-video" playsinline muted autoplay style="display:none"></video>
         <div id="reader"></div>
         <canvas id="lens-overlay"></canvas>
         <div id="viewfinder">
@@ -509,6 +517,8 @@
     let ocrWorker = null;
     let lensDetector = null;
     let lensRAF = null;
+    let liveStream = null;
+    let scanTimer = null;
 
     const BC_TYPES = [
       { code: "CODE128", label: "Code 128" },
@@ -557,6 +567,11 @@
         document.getElementById("photo-mode-area").style.display = isPhoto ? "block" : "none";
         document.getElementById("reader-wrap").style.display = "none";
         document.getElementById("scan-options").style.display = "none";
+        stopScanLoop();
+        if (liveStream) { liveStream.getTracks().forEach(t => { try { t.stop(); } catch(e){} }); liveStream = null; }
+        const lvx = document.getElementById("live-video");
+        if (lvx) { lvx.srcObject = null; lvx.style.display = "none"; }
+        document.getElementById("reader").style.display = "block";
         if (html5QrCode) {
           try { html5QrCode.stop(); } catch(e){}
           html5QrCode = null;
@@ -882,10 +897,23 @@
       try {
         if (currentType === "qr") {
           const canvas = document.createElement("canvas");
-          QRCode.toCanvas(canvas, currentValue, { width: 220, margin: 2, color: { dark: color, light: "#ffffff" } }, err => {
-            if (!err) out.appendChild(canvas);
-            else out.innerHTML = "<p class='hint'>⚠️ Impossible de générer ce QR (texte trop long ?). Essaie un code-barres.</p>";
-          });
+          let done = false;
+          // Moteur principal : bwip-js (déjà chargé pour le DataMatrix — fonctionne même si la
+          // librairie qrcode du CDN n'a pas chargé)
+          try {
+            bwipjs.toCanvas(canvas, { bcid: "qrcode", text: currentValue, scale: 4, padding: 10, includetext: false, barcolor: color.replace("#", "") });
+            out.appendChild(canvas);
+            done = true;
+          } catch (e) {}
+          // Repli : librairie qrcode.js si elle est présente
+          if (!done && typeof QRCode !== "undefined" && QRCode.toCanvas) {
+            QRCode.toCanvas(canvas, currentValue, { width: 220, margin: 2, color: { dark: color, light: "#ffffff" } }, err => {
+              if (!err) out.appendChild(canvas);
+              else out.innerHTML = "<p class='hint'>⚠️ Impossible de générer ce QR (texte trop long ?). Essaie un code-barres.</p>";
+            });
+            done = true;
+          }
+          if (!done) out.innerHTML = "<p class='hint'>⚠️ Impossible de générer ce QR pour le moment. Recharge la page puis réessaie.</p>";
         } else if (currentType === "dm") {
           const canvas = document.createElement("canvas");
           bwipjs.toCanvas(canvas, { bcid: "datamatrix", text: currentValue, scale: 5, includetext: false, barcolor: color.replace("#","") });
@@ -1054,11 +1082,47 @@
     document.getElementById("start-btn").onclick = async () => {
       const startBtn = document.getElementById("start-btn");
       const wrap = document.getElementById("reader-wrap");
-      // 1) afficher la zone caméra AVANT de démarrer la vidéo
-      // (sinon la vidéo est créée en taille 0 dans un conteneur caché → écran noir garanti)
+      const backToIdle = () => {
+        wrap.style.display = "none";
+        startBtn.disabled = false;
+        startBtn.textContent = "▶ Démarrer la caméra";
+      };
+      const camBlocked = (msg) => {
+        backToIdle();
+        alert("📷 Caméra bloquée.\n\nAutorise la caméra dans les paramètres du navigateur, puis recharge.\n\n" + msg);
+      };
       wrap.style.display = "block";
       startBtn.textContent = "⏳ Démarrage de la caméra…";
       startBtn.disabled = true;
+
+      // ===== MODE NATIF : NOTRE PROPRE VIDÉO (anti-écran noir Firefox) =====
+      // On ouvre nous-mêmes la caméra, on affiche nous-mêmes la vidéo,
+      // et le décodage se fait par BarcodeDetector (natif ou module Firefox).
+      if (await waitForDetector(3000)) {
+        try {
+          const stream = await navigator.mediaDevices.getUserMedia({
+            video: { facingMode: "environment", width: { ideal: 1920 }, height: { ideal: 1080 } },
+            audio: false
+          });
+          liveStream = stream;
+          const lv = document.getElementById("live-video");
+          lv.srcObject = stream;
+          lv.muted = true;
+          lv.playsInline = true;
+          await lv.play();
+          document.getElementById("reader").style.display = "none";
+          lv.style.display = "block";
+          camStarted(lv);
+          return;
+        } catch (err) {
+          const msg = String(err && err.message || err);
+          if (/permission|denied|NotAllowed/i.test(msg)) { camBlocked(msg); return; }
+          // autre erreur (caméra occupée, etc.) → on tente le mode secours
+          liveStream = null;
+          toast("📷 Repli sur le mode caméra alternatif…");
+        }
+      }
+      // ===== MODE SECOURS : html5-qrcode =====
       html5QrCode = new Html5Qrcode("reader");
       try {
         await html5QrCode.start(
@@ -1109,20 +1173,10 @@
             try { await vv.play(); } catch(e) {}
           }
         }, 1200);
-        document.getElementById("stop-btn").style.display = "block";
-        document.getElementById("scan-options").style.display = "flex";
-        if (video && video.srcObject) torchTrack = video.srcObject.getVideoTracks()[0] || null;
-        updateFlash();
-        if (document.getElementById("flash-auto").checked) {
-          setTimeout(async () => { if (await setTorch(true)) toast("🔦 Flash auto allumé", 1400); }, 600);
-        }
-        setupZoom(video);
-        lensStart(video);
+        camStarted(video);
       } catch (err) {
         const msg = String(err && err.message || err);
-        wrap.style.display = "none";
-        startBtn.disabled = false;
-        startBtn.textContent = "▶ Démarrer la caméra";
+        backToIdle();
         if (/permission|denied|NotAllowed/i.test(msg)) {
           alert("📷 Caméra bloquée.\n\nAutorise la caméra dans les paramètres du navigateur, puis recharge.");
         } else {
@@ -1132,6 +1186,14 @@
     };
 
     function stopCamera() {
+      stopScanLoop();
+      if (liveStream) {
+        liveStream.getTracks().forEach(t => { try { t.stop(); } catch(e){} });
+        liveStream = null;
+      }
+      const lv = document.getElementById("live-video");
+      if (lv) { try { lv.pause(); } catch(e){} lv.srcObject = null; lv.style.display = "none"; }
+      document.getElementById("reader").style.display = "block";
       if (html5QrCode) {
         html5QrCode.stop().catch(() => {});
         html5QrCode = null;
@@ -1178,7 +1240,7 @@
     };
     // 📸 Capture d'une image unique pendant la caméra (analyse locale complète)
     document.getElementById("capture-btn").onclick = async () => {
-      const video = document.querySelector("#reader video");
+      const video = activeVideo();
       if (!video || video.readyState < 2) { toast("Démarre d'abord la caméra"); return; }
       const c = document.createElement("canvas");
       c.width = video.videoWidth; c.height = video.videoHeight;
@@ -1203,6 +1265,76 @@
       else document.exitFullscreen?.();
     };
 
+    function activeVideo() {
+      const lv = document.getElementById("live-video");
+      if (lv && lv.srcObject && lv.readyState >= 2) return lv;
+      return document.querySelector("#reader video");
+    }
+    function stopScanLoop() {
+      if (scanTimer) { clearInterval(scanTimer); scanTimer = null; }
+    }
+    async function waitForDetector(ms) {
+      if ("BarcodeDetector" in window) return true;
+      for (let i = 0; i < Math.round(ms / 200); i++) {
+        await new Promise(r => setTimeout(r, 200));
+        if ("BarcodeDetector" in window) return true;
+      }
+      return "BarcodeDetector" in window;
+    }
+    function startScanLoop(video) {
+      stopScanLoop();
+      if (!liveStream) return; // mode html5-qrcode : il décode lui-même
+      try { lensDetector = new BarcodeDetector({ formats: LENS_FORMATS }); } catch(e) { return; }
+      const det = lensDetector;
+      let fails = 0;
+      scanTimer = setInterval(async () => {
+        if (!video || video.readyState < 2) return;
+        try {
+          const codes = await det.detect(video);
+          fails = 0;
+          if (codes && codes.length) {
+            const v = String(codes[0].rawValue || "");
+            if (v) onLiveDecoded(v, video);
+          }
+        } catch(e) { fails++; if (fails === 12) toast("⚠️ Lecture vidéo difficile — rapproche-toi du code"); }
+      }, 180);
+    }
+    async function onLiveDecoded(val, video) {
+      if (navigator.vibrate) navigator.vibrate(120);
+      stopAutoZoom();
+      let snap = null;
+      try {
+        if (video && video.readyState >= 2) {
+          const sc = document.createElement("canvas");
+          sc.width = video.videoWidth; sc.height = video.videoHeight;
+          sc.getContext("2d").drawImage(video, 0, 0);
+          snap = sc.toDataURL("image/jpeg", 0.6);
+        }
+      } catch(e) {}
+      showResult(val, null, snap);
+      if (!continuousMode) {
+        stopCamera();
+        toast("✅ Code lu — voici le résultat", 2400);
+        setTimeout(() => document.getElementById("result-area").scrollIntoView({ behavior: "smooth" }), 200);
+      } else {
+        toast("✅ " + val.slice(0, 40) + (val.length > 40 ? "…" : ""), 1800);
+      }
+    }
+    function camStarted(video) {
+      document.getElementById("start-btn").style.display = "none";
+      document.getElementById("start-btn").disabled = false;
+      document.getElementById("start-btn").textContent = "▶ Démarrer la caméra";
+      document.getElementById("stop-btn").style.display = "block";
+      document.getElementById("scan-options").style.display = "flex";
+      if (video && video.srcObject) torchTrack = video.srcObject.getVideoTracks()[0] || null;
+      updateFlash();
+      if (document.getElementById("flash-auto").checked) {
+        setTimeout(async () => { if (await setTorch(true)) toast("🔦 Flash auto allumé", 1400); }, 600);
+      }
+      try { setupZoom(video); } catch(e) {}
+      try { lensStart(video); } catch(e) {}
+      try { startScanLoop(video); } catch(e) {}
+    }
     function lensStart(video) {
       if (!("BarcodeDetector" in window)) return;
       try {
@@ -1405,7 +1537,7 @@
     }
 
     document.getElementById("ocr-btn").onclick = () => {
-      const video = document.querySelector("#reader video");
+      const video = activeVideo();
       if (video && video.readyState >= 2) {
         const c = document.createElement("canvas");
         c.width = video.videoWidth; c.height = video.videoHeight;
