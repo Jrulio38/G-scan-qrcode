@@ -163,6 +163,25 @@
       position: absolute; top: 0; left: 0; width: 100%; height: 100%;
       pointer-events: none; z-index: 5;
     }
+    #viewfinder {
+      position: absolute; inset: 0; z-index: 6; pointer-events: none;
+      display: flex; flex-direction: column; align-items: center; justify-content: center;
+      gap: 12px;
+    }
+    .vf-frame {
+      width: 78%; max-width: 330px; aspect-ratio: 1.3 / 1; position: relative;
+      border: 2px solid rgba(34,211,238,0.35); border-radius: 18px;
+      box-shadow: 0 0 0 9999px rgba(0,0,0,0.45);
+    }
+    .vf-c { position: absolute; width: 34px; height: 34px; border: 4px solid #22d3ee; }
+    .vf-c.tl { top: -3px; left: -3px; border-right: none; border-bottom: none; border-radius: 16px 0 0 0; }
+    .vf-c.tr { top: -3px; right: -3px; border-left: none; border-bottom: none; border-radius: 0 16px 0 0; }
+    .vf-c.bl { bottom: -3px; left: -3px; border-right: none; border-top: none; border-radius: 0 0 0 16px; }
+    .vf-c.br { bottom: -3px; right: -3px; border-left: none; border-top: none; border-radius: 0 0 16px 0; }
+    .vf-hint {
+      color: #e0f2fe; font-size: 0.85rem; font-weight: 700;
+      background: rgba(0,0,0,0.5); padding: 6px 14px; border-radius: 12px;
+    }
     .scan-options {
       display: flex;
       gap: 8px;
@@ -345,6 +364,13 @@
       <div id="reader-wrap">
         <div id="reader"></div>
         <canvas id="lens-overlay"></canvas>
+        <div id="viewfinder">
+          <div class="vf-frame">
+            <span class="vf-c tl"></span><span class="vf-c tr"></span>
+            <span class="vf-c bl"></span><span class="vf-c br"></span>
+          </div>
+          <div class="vf-hint">Cadre le code dans le rectangle</div>
+        </div>
       </div>
       <div id="photo-scan" style="display:none"></div>
 
@@ -416,6 +442,15 @@
     <div class="hint" style="font-weight:700;color:#c4b5fd;font-size:0.95rem">Valeur du code détecté / généré :</div>
     <div id="result-value"></div>
     <button class="secondary" id="copy-btn" style="margin-top:0">📋 Copier la valeur</button>
+    <div id="repair-note" class="hint" style="display:none"></div>
+    <div id="content-info" class="hint" style="display:none"></div>
+    <div id="content-actions"></div>
+    <div id="product-info" class="prod-zone"></div>
+
+    <div class="color-row">
+      <span class="hint">Couleur :</span>
+      <input type="color" id="code-color" value="#000000">
+    </div>
 
     <div class="tabs">
       <button class="active" data-type="qr">QR Code</button>
@@ -423,10 +458,6 @@
       <button data-type="dm">DataMatrix</button>
     </div>
     <button class="secondary" id="bc-cycle" style="display:none">🏷️ Type : Code 128 ▸</button>
-    <div class="color-row">
-      <span class="hint">🎨 Couleur :</span>
-      <input type="color" id="code-color" value="#000000">
-    </div>
 
     <div id="output"></div>
 
@@ -435,11 +466,6 @@
       <button class="secondary" id="print-btn">🖨️</button>
       <button class="secondary" id="clear-btn">🗑️</button>
     </div>
-
-    <div id="repair-note" class="hint" style="display:none"></div>
-    <div id="content-info" class="hint" style="display:none"></div>
-    <div id="content-actions"></div>
-    <div id="product-info" class="prod-zone"></div>
   </div>
 
   <!-- SECTION HISTORY -->
@@ -586,9 +612,9 @@
         document.getElementById("repair-note").style.display = "none";
       }
 
+      saveHistory(currentValue); // après réparation : la clé corrigée est bien celle stockée
       document.getElementById("result-value").textContent = currentValue;
       document.getElementById("result-area").style.display = "block";
-      saveHistory(currentValue);
 
       const cls = iaClassify(currentValue);
       currentType = preferredType || (cls.fmt === "barcode" ? "barcode" : cls.fmt === "dm" ? "dm" : "qr");
@@ -607,13 +633,18 @@
       actions.innerHTML = "";
       info.style.display = "none";
 
+      const carrier = CARRIERS.find(c => c.re.test(v));
+      const colisInconnu = !carrier && /^[A-Z0-9\s]{9,25}$/i.test(v) && (v.match(/\d/g) || []).length >= 8;
+
       if (/^https?:\/\//i.test(v)) {
         info.textContent = "🌐 Lien web détecté";
         info.style.display = "block";
-        const a = document.createElement("a");
-        a.href = v; a.target = "_blank"; a.rel = "noopener";
-        a.innerHTML = `<button class="secondary" style="margin-top:8px">Ouvrir le lien</button>`;
-        actions.appendChild(a);
+      } else if (carrier) {
+        info.textContent = "📮 Type de courrier : " + carrier.name;
+        info.style.display = "block";
+      } else if (colisInconnu) {
+        info.textContent = "📦 Numéro de colis détecté";
+        info.style.display = "block";
       } else if (/^(tel:|mailto:)/i.test(v)) {
         info.textContent = "📞 Contact détecté";
         info.style.display = "block";
@@ -624,14 +655,47 @@
         info.textContent = "👤 Carte de visite";
         info.style.display = "block";
       } else if (/^\d{8,14}$/.test(v)) {
-        info.textContent = "🏷️ Code-barres produit / colis";
+        info.textContent = "🏷️ Code-barres produit";
         info.style.display = "block";
       }
-      carrierButtons(v, actions);
+
+      // Rangée de boutons d'action clairs
+      const row = document.createElement("div");
+      row.className = "btn-row";
+      row.style.marginTop = "10px";
+
+      if (/^https?:\/\//i.test(v)) {
+        const a = document.createElement("a");
+        a.href = v; a.target = "_blank"; a.rel = "noopener"; a.style.flex = "1";
+        a.innerHTML = "<button class='secondary' style='margin-top:0;width:100%'>🌐 Ouvrir le lien</button>";
+        row.appendChild(a);
+      }
+      if (carrier) {
+        const a2 = document.createElement("a");
+        a2.href = carrier.url(v); a2.target = "_blank"; a2.rel = "noopener"; a2.style.flex = "1";
+        a2.innerHTML = "<button class='secondary' style='margin-top:0;width:100%'>📮 Suivre ce colis</button>";
+        row.appendChild(a2);
+      }
+      if (colisInconnu) {
+        const a3 = document.createElement("a");
+        a3.href = "https://parcelsapp.com/fr/tracking/" + encodeURIComponent(v);
+        a3.target = "_blank"; a3.rel = "noopener"; a3.style.flex = "1";
+        a3.innerHTML = "<button class='secondary' style='margin-top:0;width:100%'>📮 Suivre ce colis</button>";
+        row.appendChild(a3);
+      }
+      if (/^\d{8,14}$/.test(v)) {
+        const bProd = document.createElement("button");
+        bProd.className = "secondary";
+        bProd.textContent = "📊 Caractéristiques du produit";
+        bProd.onclick = () => {
+          tryLoadProduct(v);
+          setTimeout(() => document.getElementById("product-info").scrollIntoView({ behavior: "smooth", block: "nearest" }), 250);
+        };
+        row.appendChild(bProd);
+      }
       // 🤖 IA toujours accessible : identifier le type de produit quel qu'il soit
       const bAi = document.createElement("button");
-      bAi.className = "sm secondary";
-      bAi.style.marginTop = "8px";
+      bAi.className = "secondary";
       bAi.textContent = "🤖 Identifier avec l'IA (type de produit)";
       bAi.onclick = async () => {
         const key = localStorage.getItem("gscan-gemini") || "";
@@ -653,7 +717,8 @@
         document.getElementById("result-area").scrollIntoView({ behavior: "smooth" });
         bAi.textContent = "🤖 Identifier avec l'IA (type de produit)";
       };
-      actions.appendChild(bAi);
+      row.appendChild(bAi);
+      actions.appendChild(row);
     }
 
     // Boutons de suivi transporteurs (UPS, DHL, FedEx, Chronopost, La Poste…)
@@ -665,35 +730,13 @@
       { name: "FedEx", re: /^\d{12}$/, url: v => "https://www.fedex.com/fedextrack/?trknbr=" + encodeURIComponent(v) },
       { name: "Mondial Relay", re: /^\d{15}$|^\d{8}$/, url: v => "https://parcelsapp.com/fr/tracking/" + encodeURIComponent(v) }
     ];
-    function carrierButtons(v, zone) {
-      CARRIERS.forEach(c => {
-        if (!c.re.test(v)) return;
-        const a = document.createElement("a");
-        a.href = c.url(v);
-        a.target = "_blank";
-        a.rel = "noopener";
-        a.style.marginTop = "8px";
-        a.innerHTML = "<button class='sm secondary'>📮 Suivre " + esc(c.name) + "</button>";
-        zone.appendChild(a);
-      });
-      // Universel : tout numéro de colis alnum 9-25 avec ≥8 chiffres
-      if (/^[A-Z0-9\s]{9,25}$/i.test(v) && (v.match(/\d/g) || []).length >= 8 && !CARRIERS.some(c => c.re.test(v))) {
-        const a = document.createElement("a");
-        a.href = "https://parcelsapp.com/fr/tracking/" + encodeURIComponent(v);
-        a.target = "_blank";
-        a.rel = "noopener";
-        a.style.marginTop = "8px";
-        a.innerHTML = "<button class='sm secondary'>📮 Suivre ce colis (tous transporteurs)</button>";
-        zone.appendChild(a);
-      }
-    }
 
     const PROD_HEADER = "<div style=\"font-weight:700;color:#c4b5fd;font-size:0.92rem;margin-bottom:8px;\">📦 Données du produit</div>";
-    let lastProductQuery = "";
+    let lastProductCode = null;
     async function tryLoadProduct(barcode) {
       const zone = document.getElementById("product-info");
-      if (barcode === lastProductQuery && zone.innerHTML) return; // déjà affiché → pas de re-fetch
-      lastProductQuery = barcode;
+      if (barcode === lastProductCode && zone.innerHTML.trim() !== "") return; // déjà affiché
+      lastProductCode = barcode;
       if (!/^\d{8,14}$/.test(barcode)) {
         zone.innerHTML = PROD_HEADER + "<p class='hint' style=\"margin:0\">Ce code n'est pas un code produit (8 à 14 chiffres). Les bases libres ne peuvent pas le chercher — le bouton 🤖 « Identifier avec l'IA » ci-dessus peut dire ce que c'est.</p>";
         return;
@@ -833,11 +876,11 @@
           const canvas = document.createElement("canvas");
           QRCode.toCanvas(canvas, currentValue, { width: 220, margin: 2, color: { dark: color, light: "#ffffff" } }, err => {
             if (!err) out.appendChild(canvas);
-            else out.innerHTML = "<p class='hint'>Valeur trop longue pour un QR Code.</p>";
+            else out.innerHTML = "<p class='hint'>⚠️ Impossible de générer ce QR (texte trop long ?). Essaie un code-barres.</p>";
           });
         } else if (currentType === "dm") {
           const canvas = document.createElement("canvas");
-          bwipjs.toCanvas(canvas, { bcid: "datamatrix", text: currentValue, scale: 4, height: 14, includetext: false, textcolor: color.replace("#","") });
+          bwipjs.toCanvas(canvas, { bcid: "datamatrix", text: currentValue, scale: 5, includetext: false, barcolor: color.replace("#","") });
           out.appendChild(canvas);
         } else {
           const canvas = document.createElement("canvas");
@@ -847,7 +890,7 @@
             out.appendChild(canvas);
           } catch (e) {
             try {
-              bwipjs.toCanvas(canvas, { bcid: type.toLowerCase().replace("upc","upca"), text: currentValue, scale: 3, height: 12, includetext: true });
+              bwipjs.toCanvas(canvas, { bcid: type.toLowerCase().replace("upc","upca"), text: currentValue, scale: 3, height: 12, includetext: true, barcolor: color.replace("#","") });
               out.appendChild(canvas);
             } catch (e2) {
               out.innerHTML = "<p class='hint'>Impossible de générer ce format pour cette valeur.</p>";
@@ -882,7 +925,7 @@
     };
     document.getElementById("download-btn").onclick = () => {
       const canvas = document.querySelector("#output canvas");
-      if (!canvas) return;
+      if (!canvas) { toast("Aucun code affiché à enregistrer"); return; }
       const a = document.createElement("a");
       a.download = "g-scan-" + Date.now() + ".png";
       a.href = canvas.toDataURL("image/png");
@@ -890,7 +933,7 @@
     };
     document.getElementById("print-btn").onclick = () => {
       const canvas = document.querySelector("#output canvas");
-      if (!canvas) return;
+      if (!canvas) { toast("Aucun code affiché à imprimer"); return; }
       const w = window.open("");
       w.document.write(`<img src="${canvas.toDataURL()}" style="max-width:100%">`);
       w.document.close();
@@ -1022,6 +1065,8 @@
             showResult(decoded, null, snap);
             if (!continuousMode) {
               stopCamera();
+              toast("✅ Code lu — voici le résultat", 2400);
+              setTimeout(() => document.getElementById("result-area").scrollIntoView({ behavior: "smooth" }), 200);
             } else {
               toast("✅ " + decoded.slice(0, 40) + (decoded.length > 40 ? "…" : ""), 1800);
             }
@@ -1105,6 +1150,7 @@
       if (items && items.length) {
         showResult(items[0].value, null, preview);
         toast(items.length > 1 ? "✅ " + items.length + " codes trouvés" : "✅ Code trouvé");
+        setTimeout(() => document.getElementById("result-area").scrollIntoView({ behavior: "smooth" }), 150);
         return;
       }
       const text = await ocrRead(c);
@@ -1341,7 +1387,7 @@
     document.getElementById("ocr-free-btn").onclick = () => document.getElementById("photo-ocr-input").click();
     document.getElementById("photo-ocr-input").onchange = e => {
       if (e.target.files[0]) handlePhoto(e.target.files[0]);
-      e.target.value = "";
+      e.target.value = ""; // permet de reprendre la MÊME photo deux fois
     };
 
     document.getElementById("ai-key-btn").onclick = () => {
@@ -1368,8 +1414,8 @@
     };
     document.getElementById("ai-photo-input").onchange = async e => {
       const file = e.target.files[0];
+      if (!file) { e.target.value = ""; return; }
       e.target.value = ""; // permet de reprendre la MÊME photo deux fois
-      if (!file) return;
       const key = document.getElementById("ai-key").value.trim() || localStorage.getItem("gscan-gemini");
       const question = document.getElementById("ai-question").value.trim() || "Extrais tous les codes (QR, barres, DataMatrix) et le texte important de cette image. Réponds en français, clairement.";
       toast("🤖 Envoi à Gemini…");
