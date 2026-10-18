@@ -290,8 +290,7 @@
     let history = JSON.parse(localStorage.getItem("gscan-history") || "[]");
     let torchMode = localStorage.getItem("gscan-torch") || "auto";
     let torchTrack = null;
-    let zoomTrack = null;
-    // (zoom auto : variables declarees plus bas avec setupZoom)
+    // (zoom auto : variables déclarées plus bas avec setupZoom)
     let ocrWorker = null;
     let ocrBusy = false;
 
@@ -493,6 +492,7 @@
     let lensDetector = null;
     let lensTimer = null;
 
+    // ===== ENCADREMENT ESTHÉTIQUE (nouveau style) =====
     function lensRoundRect(ctx, x, y, w, h, r) {
       ctx.beginPath();
       ctx.moveTo(x + r, y);
@@ -504,10 +504,13 @@
     }
 
     function lensStop() {
-      if (lensTimer) { clearInterval(lensTimer); lensTimer = null; }
+      if (lensTimer) {
+        clearInterval(lensTimer);
+        lensTimer = null;
+      }
       const c = document.getElementById("lens-overlay");
       if (c) {
-        const ctx = c.getContext && c.getContext("2d");
+        const ctx = c.getContext("2d");
         if (ctx) ctx.clearRect(0, 0, c.width, c.height);
         c.style.display = "none";
       }
@@ -518,7 +521,8 @@
         try {
           if (!video || video.readyState < 2) return;
           const wrap = canvas.parentElement;
-          const w = wrap.clientWidth, h = wrap.clientHeight;
+          const w = wrap.clientWidth;
+          const h = wrap.clientHeight;
           if (!w || !h) return;
           const dpr = window.devicePixelRatio || 1;
           if (canvas.width !== Math.round(w * dpr) || canvas.height !== Math.round(h * dpr)) {
@@ -529,36 +533,42 @@
           ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
           ctx.clearRect(0, 0, w, h);
           const codes = await lensDetector.detect(video);
+          // ===== AUCUN CODE → viseur élégant =====
           if (!codes || codes.length === 0) {
-            // ===== Viseur avant détection (comme Google Lens) =====
-            const gw = w * 0.8, gh = h * 0.56;
-            const gx = (w - gw) / 2, gy = (h - gh) / 2;
-            const pulse = 0.5 + 0.5 * Math.sin(Date.now() / 600);
-            ctx.save();
-            ctx.setLineDash([9, 7]);
-            ctx.lineWidth = 2;
-            ctx.strokeStyle = "rgba(168,85,247," + (0.3 + 0.4 * pulse).toFixed(2) + ")";
-            lensRoundRect(ctx, gx, gy, gw, gh, 18);
+            const gw = w * 0.78;
+            const gh = h * 0.52;
+            const gx = (w - gw) / 2;
+            const gy = (h - gh) / 2;
+            const pulse = 0.55 + 0.45 * Math.sin(Date.now() / 700);
+            // Fond semi-transparent autour du viseur
+            ctx.fillStyle = "rgba(0,0,0,0.28)";
+            ctx.fillRect(0, 0, w, h);
+            ctx.clearRect(gx, gy, gw, gh);
+            // Cadre principal
+            ctx.strokeStyle = `rgba(34, 211, 238, ${0.55 + 0.35 * pulse})`;
+            ctx.lineWidth = 2.5;
+            lensRoundRect(ctx, gx, gy, gw, gh, 16);
             ctx.stroke();
-            ctx.setLineDash([]);
-            const CL = 28;
-            [[gx, gy, 1, 1], [gx + gw, gy, -1, 1], [gx + gw, gy + gh, -1, -1], [gx, gy + gh, 1, -1]].forEach(function (c) {
+            // Coins accentués
+            const CL = 26;
+            ctx.lineWidth = 4;
+            ctx.strokeStyle = "rgba(168, 85, 247, 0.95)";
+            [[gx, gy, 1, 1], [gx + gw, gy, -1, 1], [gx + gw, gy + gh, -1, -1], [gx, gy + gh, 1, -1]].forEach(([x, y, dx, dy]) => {
               ctx.beginPath();
-              ctx.moveTo(c[0] + c[2] * CL, c[1]);
-              ctx.lineTo(c[0], c[1]);
-              ctx.lineTo(c[0], c[1] + c[3] * CL);
-              ctx.strokeStyle = "rgba(34,211,238,0.9)";
-              ctx.lineWidth = 4;
+              ctx.moveTo(x + dx * CL, y);
+              ctx.lineTo(x, y);
+              ctx.lineTo(x, y + dy * CL);
               ctx.stroke();
             });
+            // Texte
             ctx.font = "600 13px system-ui, sans-serif";
             ctx.textAlign = "center";
-            ctx.fillStyle = "rgba(233,213,255," + (0.7 + 0.3 * pulse).toFixed(2) + ")";
-            ctx.fillText("Vise un QR, un code-barres ou un DataMatrix", w / 2, gy - 14);
-            ctx.restore();
+            ctx.fillStyle = `rgba(233, 213, 255, ${0.75 + 0.25 * pulse})`;
+            ctx.fillText("Vise un QR • code-barres • DataMatrix", w / 2, gy - 16);
             return;
           }
-          lastLensDetection = Date.now(); // un code est suivi : le zoom auto se fige
+          // ===== CODE DÉTECTÉ → suivi élégant =====
+          lastLensDetection = Date.now();
           const vRect = video.getBoundingClientRect();
           const cRect = canvas.getBoundingClientRect();
           const sx = vRect.width / (video.videoWidth || 1);
@@ -566,85 +576,133 @@
           const ox = vRect.left - cRect.left;
           const oy = vRect.top - cRect.top;
           codes.forEach((cd) => {
-            const pts = (cd.cornerPoints || []).map(p => ({ x: ox + p.x * sx, y: oy + p.y * sy }));
+            const pts = (cd.cornerPoints || []).map(p => ({
+              x: ox + p.x * sx,
+              y: oy + p.y * sy
+            }));
             if (pts.length < 4) return;
-            // Cadre cyan qui suit le code
-            ctx.beginPath();
-            ctx.moveTo(pts[0].x, pts[0].y);
-            for (let i = 1; i < 4; i++) ctx.lineTo(pts[i].x, pts[i].y);
-            ctx.closePath();
-            ctx.strokeStyle = "rgba(34,211,238,0.95)";
-            ctx.lineWidth = 3;
-            ctx.stroke();
-            // Coins violets (style Lens)
-            const corner = (p, dx, dy) => {
-              ctx.beginPath();
-              ctx.moveTo(p.x + dx * 14, p.y);
-              ctx.lineTo(p.x, p.y);
-              ctx.lineTo(p.x, p.y + dy * 14);
-              ctx.strokeStyle = "rgba(168,85,247,1)";
-              ctx.lineWidth = 4;
-              ctx.stroke();
-            };
-            corner(pts[0], -1, -1); corner(pts[1], 1, -1); corner(pts[2], 1, 1); corner(pts[3], -1, 1);
-            // Étiquette : type + valeur + badge suivi / Smart Data
-            const val = String(cd.rawValue || "");
-            let badge = "";
-            if (/^[A-Z]{2}\d{9}[A-Z]{2}$/i.test(val)) badge = "  📮 suivi";
-            else if (/^SD\d{6,}/i.test(val) || /^SMARD/i.test(val)) badge = "  🔗 Smart Data";
-            else if (/^https?:\/\//i.test(val)) badge = "  🌐 lien";
-            else if (/^\d{8}$|^\d{12,14}$/.test(val)) badge = "  📦 produit";
-            const txt = (LENS_LABELS[cd.format] || cd.format || "Code") + " : " + (val.length > 24 ? val.slice(0, 24) + "…" : val) + badge;
-            ctx.font = "600 12px system-ui, sans-serif";
-            const tw = ctx.measureText(txt).width + 14;
-            const topY = Math.min(pts[0].y, pts[1].y);
-            const bx = Math.max(4, Math.min(Math.min(pts[0].x, pts[1].x), w - tw - 4));
-            const by = (topY - 26 >= 4) ? topY - 26 : Math.min(h - 24, Math.max(pts[2].y, pts[3].y) + 6);
-            ctx.fillStyle = "rgba(15,12,26,0.85)";
-            lensRoundRect(ctx, bx, by, tw, 20, 6);
+            // Calcul du bounding box
+            const xs = pts.map(p => p.x);
+            const ys = pts.map(p => p.y);
+            const minX = Math.min(...xs) - 8;
+            const maxX = Math.max(...xs) + 8;
+            const minY = Math.min(...ys) - 8;
+            const maxY = Math.max(...ys) + 8;
+            const bw = maxX - minX;
+            const bh = maxY - minY;
+            // Fond très léger derrière le code
+            ctx.fillStyle = "rgba(6, 182, 212, 0.08)";
+            lensRoundRect(ctx, minX, minY, bw, bh, 12);
             ctx.fill();
-            ctx.strokeStyle = "rgba(168,85,247,0.8)";
-            ctx.lineWidth = 1;
-            lensRoundRect(ctx, bx, by, tw, 20, 6);
+            // Cadre principal arrondi (dégradé simulé)
+            ctx.strokeStyle = "rgba(34, 211, 238, 0.95)";
+            ctx.lineWidth = 3;
+            lensRoundRect(ctx, minX, minY, bw, bh, 12);
             ctx.stroke();
+            // Coins violets plus élégants
+            const cornerLen = 18;
+            ctx.lineWidth = 4.5;
+            ctx.strokeStyle = "rgba(168, 85, 247, 1)";
+            ctx.lineCap = "round";
+            // Haut-gauche
+            ctx.beginPath();
+            ctx.moveTo(minX + cornerLen, minY);
+            ctx.lineTo(minX, minY);
+            ctx.lineTo(minX, minY + cornerLen);
+            ctx.stroke();
+            // Haut-droit
+            ctx.beginPath();
+            ctx.moveTo(maxX - cornerLen, minY);
+            ctx.lineTo(maxX, minY);
+            ctx.lineTo(maxX, minY + cornerLen);
+            ctx.stroke();
+            // Bas-droit
+            ctx.beginPath();
+            ctx.moveTo(maxX - cornerLen, maxY);
+            ctx.lineTo(maxX, maxY);
+            ctx.lineTo(maxX, maxY - cornerLen);
+            ctx.stroke();
+            // Bas-gauche
+            ctx.beginPath();
+            ctx.moveTo(minX + cornerLen, maxY);
+            ctx.lineTo(minX, maxY);
+            ctx.lineTo(minX, maxY - cornerLen);
+            ctx.stroke();
+            // ===== Étiquette élégante =====
+            const rawType = (cd.format || "unknown").toLowerCase();
+            const typeLabel = LENS_LABELS[rawType] || rawType.toUpperCase();
+            let value = (cd.rawValue || "").trim();
+            // Badges (suivi / Smart Data / lien / produit)
+            let badge = "";
+            if (/^[A-Z]{2}\d{9}[A-Z]{2}$/i.test(value)) badge = "  U0001F4EE suivi";
+            else if (/^SD\d{6,}/i.test(value) || /^SMARD/i.test(value)) badge = "  U0001F517 Smart Data";
+            else if (/^https?:\/\//i.test(value)) badge = "  U0001F310 lien";
+            else if (/^\d{8}$|^\d{12,14}$/.test(value)) badge = "  U0001F4E6 produit";
+            if (value.length > 28) value = value.slice(0, 26) + "…";
+            const label = typeLabel + (value ? "  ·  " + value : "") + badge;
+            ctx.font = "600 12px system-ui, sans-serif";
+            const tw = ctx.measureText(label).width + 20;
+            const th = 26;
+            const lx = Math.max(8, Math.min(minX, w - tw - 8));
+            const ly = Math.max(8, minY - th - 10);
+            // Fond flou de l'étiquette
+            ctx.fillStyle = "rgba(15, 12, 26, 0.82)";
+            lensRoundRect(ctx, lx, ly, tw, th, 8);
+            ctx.fill();
+            // Bordure fine
+            ctx.strokeStyle = "rgba(34, 211, 238, 0.5)";
+            ctx.lineWidth = 1;
+            lensRoundRect(ctx, lx, ly, tw, th, 8);
+            ctx.stroke();
+            // Texte
             ctx.fillStyle = "#e9d5ff";
-            ctx.fillText(txt, bx + 7, by + 14);
+            ctx.textAlign = "left";
+            ctx.textBaseline = "middle";
+            ctx.fillText(label, lx + 10, ly + th / 2);
           });
-        } catch (e) { /* frame ignorée */ }
+        } catch (e) {
+          // silencieux
+        }
       })();
     }
 
     async function lensStart(video) {
       lensStop();
       const hint = document.getElementById("lens-hint");
-      // Attend l'API native OU le polyfill (CDN parfois lent à la 1re visite)
+      // Attend l'API native OU le polyfill (CDN parfois lent à la 1re visite,
+      // indispensable sur Firefox) — conservé de la V9.
       if (!("BarcodeDetector" in window) && !window.__noBDPolyfill) {
-        hint.textContent = "⏳ Chargement du module d'encadrement...";
-        hint.style.display = "block";
+        if (hint) { hint.textContent = "⏳ Chargement du module d'encadrement..."; hint.style.display = "block"; }
         for (let i = 0; i < 15 && !("BarcodeDetector" in window) && !window.__noBDPolyfill; i++) {
           await new Promise(r => setTimeout(r, 200));
         }
       }
       if (!("BarcodeDetector" in window)) {
-        hint.textContent = "ℹ️ L'encadrement qui suit le code n'est pas disponible sur CE navigateur (utilise Chrome ou Safari récent) — mais le scan et le zoom automatique fonctionnent quand même.";
-        hint.style.display = "block";
+        if (hint) {
+          hint.textContent = "ℹ️ Encadrement non disponible sur ce navigateur (Chrome recommandé) — le scan fonctionne quand même.";
+          hint.style.display = "block";
+        }
         return;
       }
       if (hint) hint.style.display = "none";
-      try { lensDetector = lensDetector || new BarcodeDetector({ formats: LENS_FORMATS }); }
-      catch (e) {
+      try {
+        lensDetector = lensDetector || new BarcodeDetector({ formats: LENS_FORMATS });
+      } catch (e) {
         if (hint) {
-          hint.textContent = "ℹ️ L'encadrement live n'a pas pu démarrer — le scan fonctionne quand même.";
+          hint.textContent = "ℹ️ Encadrement non supporté — le scan fonctionne.";
           hint.style.display = "block";
         }
         return;
       }
       const canvas = document.getElementById("lens-overlay");
+      if (!canvas) return;
       canvas.style.display = "block";
-      lensTimer = setInterval(() => { lensTick(video, canvas); }, 120);
+      lensTimer = setInterval(() => {
+        lensTick(video, canvas);
+      }, 110);
     }
 
-    // ===== Camera =====
+        // ===== Camera =====
     document.getElementById("start-btn").onclick = async () => {
       html5QrCode = new Html5Qrcode("reader");
       try {
@@ -716,7 +774,11 @@
         stopAutoZoom();
         stopAutoTorch();
         applyTorch(false);
+        stopAutoZoom();
+        lensStop();
+        applyTorch(false);
         torchTrack = null;
+        zoomTrack = null;
         updateFlashBtn();
         html5QrCode.stop().then(() => {
           document.getElementById("stop-btn").style.display = "none";
@@ -808,66 +870,89 @@
       }
     };
 
-    // ===== Zoom =====
-    // ===== Zoom automatique =====
-    // Plus de boutons +/− : l'app règle toute seule la mise au point et le zoom.
-    // Tant qu'aucun code n'est repéré, elle essaie un nouveau palier toutes les
-    // 2,5 s (vue large -> moyenne -> serrée) pour lire instantanément même les
-    // petits codes (DataMatrix, timbres...). Dès qu'un code est suivi ou lu,
-    // elle garde le palier qui marche.
+    // ===== Binôme IA-G-scan : réception d'une valeur envoyée =====
+    (function () {
+      try {
+        const raw = localStorage.getItem("gscan_handoff");
+        if (!raw) return;
+        const h = JSON.parse(raw);
+        if (!h || !h.value || Date.now() - (h.at || 0) > 5 * 60 * 1000) return;
+        localStorage.removeItem("gscan_handoff");
+        const t = document.getElementById("gen-input");
+        if (t) { t.value = h.value; t.dispatchEvent(new Event("input", { bubbles: true })); }
+        alert("U0001F916 IA-G-scan a envoyé :\n\n" + h.value + (t ? "\n\n✓ Prêt dans la zone de génération." : ""));
+      } catch (e) {}
+    })();
+
+        // ===== ZOOM INTELLIGENT (corrigé) =====
+    let zoomTrack = null;
     let zoomSteps = [];
     let zoomStepIdx = 0;
     let autoZoomTimer = null;
     let lastLensDetection = 0;
+    let lockedZoom = false;          // zoom figé quand un code est suivi
 
     function stopAutoZoom() {
-      if (autoZoomTimer) { clearInterval(autoZoomTimer); autoZoomTimer = null; }
+      if (autoZoomTimer) {
+        clearInterval(autoZoomTimer);
+        autoZoomTimer = null;
+      }
     }
 
     function applyZoomLevel(z) {
       if (!zoomTrack) return;
-      try {
-        zoomTrack.applyConstraints({ advanced: [{ zoom: z }] }).catch(() => {});
-      } catch (e) {}
+      zoomTrack.applyConstraints({ advanced: [{ zoom: z }] }).catch(() => {});
     }
 
     function setupZoom(video) {
+      stopAutoZoom();
+      lockedZoom = false;
       const track = video && video.srcObject ? video.srcObject.getVideoTracks()[0] : null;
       if (!track) return;
       zoomTrack = track;
-      // Haute résolution APRES démarrage (la config de start() n'accepte qu'UNE clé)
-      try {
-        track.applyConstraints({ width: { ideal: 1920 }, height: { ideal: 1080 }, frameRate: { ideal: 30 } }).catch(() => {});
-      } catch (e) {}
-      // Mise au point continue (si la caméra le permet)
-      try {
-        track.applyConstraints({ advanced: [{ focusMode: "continuous" }] }).catch(() => {});
-      } catch (e) {}
-      // Paliers de zoom automatiques
+      // Haute résolution + mise au point continue (conservés de la V10)
+      try { track.applyConstraints({ width: { ideal: 1920 }, height: { ideal: 1080 }, frameRate: { ideal: 30 } }).catch(() => {}); } catch (e) {}
+      try { track.applyConstraints({ advanced: [{ focusMode: "continuous" }] }).catch(() => {}); } catch (e) {}
       let caps = {};
       try { caps = track.getCapabilities() || {}; } catch (e) {}
+      const hint = document.getElementById("zoom-hint");
       if (!caps.zoom || caps.zoom.max === undefined) {
-        document.getElementById("zoom-hint").textContent = "🔍 Zoom automatique : le zoom matériel n'est pas disponible sur cet appareil — l'app utilise la résolution maximale à la place.";
-        document.getElementById("zoom-hint").style.display = "block";
+        if (hint) {
+          hint.textContent = "U0001F50D Zoom matériel non disponible — résolution maximale utilisée.";
+          hint.style.display = "block";
+        }
         return;
       }
       const zmin = caps.zoom.min || 1;
       const zmax = caps.zoom.max || 1;
-      const zmid = zmin + (zmax - zmin) * 0.5;
-      zoomSteps = [zmin, Math.min(zmid, zmin + (zmax - zmin) * 0.45), zmax];
+      const zmid = zmin + (zmax - zmin) * 0.45;
+      // 3 paliers : large → moyen → serré
+      zoomSteps = [zmin, Math.min(zmid, zmax), zmax];
       zoomStepIdx = 0;
       applyZoomLevel(zoomSteps[0]);
-      document.getElementById("zoom-hint").style.display = "block";
+      if (hint) {
+        hint.textContent = "U0001F50D Zoom auto";
+        hint.style.display = "block";
+      }
+      // Zoom beaucoup plus calme
       autoZoomTimer = setInterval(() => {
-        if (Date.now() - lastLensDetection < 3000) return; // un code est suivi : on garde le zoom
+        // Si un code est suivi récemment → on fige le zoom
+        if (Date.now() - lastLensDetection < 4500) {
+          if (!lockedZoom && hint) { hint.textContent = "U0001F512 Zoom figé — code repéré"; }
+          lockedZoom = true;
+          return;
+        }
+        // Sinon on change de niveau seulement toutes les 4 secondes
+        if (lockedZoom && hint) { hint.textContent = "U0001F50D Zoom auto"; }
+        lockedZoom = false;
         zoomStepIdx = (zoomStepIdx + 1) % zoomSteps.length;
         applyZoomLevel(zoomSteps[zoomStepIdx]);
-      }, 2500);
+      }, 4000);
     }
 
     // (Les boutons Zoom + / − ont été remplacés par le zoom automatique.)
 
-    // ===== OCR =====
+        // ===== OCR =====
     document.getElementById("ocr-btn").onclick = () => ocrFromCamera();
 
     // OCR texte libre : toute la photo devient texte copiable
