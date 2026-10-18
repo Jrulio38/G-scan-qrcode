@@ -1,4 +1,4 @@
-const CACHE_NAME = "g-scan-qrcode-v15";
+const CACHE_NAME = "g-scan-qrcode-v17";
 const ASSETS = ["./", "./index.html", "./manifest.json", "./icon.svg"];
 
 self.addEventListener("install", (e) => {
