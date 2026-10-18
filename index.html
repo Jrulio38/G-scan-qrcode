@@ -1,27 +1,21 @@
 <!DOCTYPE html>
 <html lang="fr">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-  <title>G-scan-qrcode</title>
-  <meta name="theme-color" content="#0f0c1a" />
-  <meta name="description" content="Scanner et régénérer QR Code, codes-barres et DataMatrix — rapide et moderne" />
-  <meta name="apple-mobile-web-app-capable" content="yes" />
-  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-  <link rel="manifest" href="manifest.json" />
-  
-  <!-- Favicon en data-URI (plus besoin de fichier externe) -->
-  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='22' fill='%237c3aed'/><text y='68' x='50' text-anchor='middle' font-size='52' font-weight='800' fill='white' font-family='system-ui'>G</text></svg>" />
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <title>G-scan — Scanner intelligent</title>
+  <meta name="theme-color" content="#0a0817">
+  <meta name="description" content="Scanner QR, codes-barres, DataMatrix + analyse IA locale + infos produit — tout en un">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <link rel="manifest" href="./manifest.json">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='22' fill='%237c3aed'/><text y='68' x='50' text-anchor='middle' font-size='52' font-weight='800' fill='white' font-family='system-ui'>G</text></svg>">
 
-  <!-- Bibliothèques -->
   <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.3/lib/browser.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.6/dist/JsBarcode.all.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/bwip-js@4.3.0/dist/bwip-js-min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js"></script>
-  <!-- Polyfill BarcodeDetector : apporte l'encadrement qui suit le code sur
-       Firefox et les navigateurs sans l'API native (moteur ZXing, tout local
-       après le premier chargement). Ne fait rien si l'API existe déjà. -->
   <script>
     (function () {
       if ("BarcodeDetector" in window) return;
@@ -33,7 +27,7 @@
       };
       load("https://cdn.jsdelivr.net/npm/barcode-detector-polyfill@0.1.2/dist/BarcodeDetector.min.js", function () {
         load("https://unpkg.com/barcode-detector-polyfill@0.1.2/dist/BarcodeDetector.min.js", function () {
-          window.__noBDPolyfill = true; // aucun polyfill -> l'app affichera le message d'aide
+          window.__noBDPolyfill = true;
         });
       });
     })();
@@ -41,208 +35,380 @@
 
   <style>
     :root {
-      --bg: #0f0c1a;
-      --card: rgba(255,255,255,0.05);
-      --border: rgba(255,255,255,0.1);
-      --text: #f0eeff;
-      --muted: #a5a0c4;
-      --accent: linear-gradient(135deg, #06b6d4, #7c3aed 50%, #db2777);
+      --bg: #0a0817;
+      --card: rgba(30, 27, 50, 0.75);
+      --border: rgba(148, 163, 184, 0.18);
+      --text: #ede9fe;
+      --muted: #a5b4fc;
+      --accent: linear-gradient(135deg, #22d3ee, #a855f7 55%, #ec4899);
+      --accent-solid: #a855f7;
       --radius: 18px;
     }
-    * { box-sizing: border-box; margin: 0; padding: 0; }
+    * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
     body {
-      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
       background: var(--bg);
+      background-image:
+        radial-gradient(60% 40% at 15% 8%, rgba(34,211,238,.13), transparent 60%),
+        radial-gradient(50% 40% at 90% 95%, rgba(168,85,247,.14), transparent 60%);
       color: var(--text);
       min-height: 100vh;
-      padding: 16px;
+      padding: 14px 12px 90px;
       max-width: 520px;
       margin: 0 auto;
       line-height: 1.45;
     }
     h1 {
-      font-size: 1.55rem;
+      font-size: 1.45rem;
       font-weight: 800;
-      margin-bottom: 4px;
+      margin-bottom: 2px;
       background: var(--accent);
       -webkit-background-clip: text;
       -webkit-text-fill-color: transparent;
       background-clip: text;
     }
-    .subtitle { color: var(--muted); font-size: 0.9rem; margin-bottom: 20px; }
+    .subtitle { color: var(--muted); font-size: 0.82rem; margin-bottom: 16px; }
     .card {
       background: var(--card);
       border: 1px solid var(--border);
       border-radius: var(--radius);
-      padding: 16px;
-      margin-bottom: 14px;
-      backdrop-filter: blur(12px);
+      padding: 14px;
+      margin-bottom: 12px;
+      backdrop-filter: blur(10px);
+    }
+    .card h2 {
+      font-size: 0.95rem;
+      color: #c4b5fd;
+      margin-bottom: 10px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
     }
     button {
       width: 100%;
-      padding: 14px 18px;
+      padding: 13px 16px;
       border: none;
       border-radius: 14px;
-      font-size: 1rem;
+      font-size: 0.95rem;
       font-weight: 700;
       cursor: pointer;
       color: white;
       background: var(--accent);
       transition: transform 0.1s, opacity 0.15s;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
     }
-    button:active { transform: scale(0.98); }
+    button:active { transform: scale(0.97); }
     button.secondary {
       background: rgba(255,255,255,0.07);
       border: 1px solid var(--border);
       margin-top: 8px;
     }
-    input, select, textarea {
-      width: 100%;
-      padding: 13px 14px;
-      border-radius: 12px;
+    button.ghost {
+      background: transparent;
       border: 1px solid var(--border);
-      background: rgba(0,0,0,0.3);
-      color: var(--text);
-      font-size: 1rem;
       margin-top: 8px;
+      font-weight: 600;
+      color: var(--muted);
     }
-    input:focus, select:focus { outline: 2px solid #7c3aed; border-color: transparent; }
-    #reader {
-      width: 100%;
+    button.sm {
+      width: auto;
+      padding: 8px 14px;
+      font-size: 0.82rem;
+      border-radius: 10px;
+      margin-top: 0;
+    }
+    .btn-row {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      margin-top: 10px;
+    }
+    .btn-row button { flex: 1; min-width: 0; margin-top: 0; }
+    .mode-bar {
+      display: flex;
+      background: rgba(0,0,0,0.35);
+      border-radius: 14px;
+      padding: 4px;
+      margin-bottom: 14px;
+      gap: 2px;
+    }
+    .mode-bar button {
+      flex: 1;
+      padding: 10px 6px;
+      font-size: 0.82rem;
+      background: transparent;
+      border: none;
+      border-radius: 11px;
+      color: var(--muted);
+      font-weight: 600;
+    }
+    .mode-bar button.active {
+      background: var(--accent);
+      color: white;
+    }
+    #reader-wrap {
+      position: relative;
       border-radius: 14px;
       overflow: hidden;
       background: #000;
-      margin-bottom: 12px;
+      margin-bottom: 10px;
+      display: none;
     }
-    .tabs { display: flex; gap: 6px; margin: 12px 0; }
-    .tabs button {
-      flex: 1;
-      padding: 10px;
-      font-size: 0.9rem;
-      background: rgba(255,255,255,0.06);
+    #reader { width: 100%; }
+    #lens-overlay {
+      position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+      pointer-events: none; z-index: 5;
     }
-    .tabs button.active { background: var(--accent); }
+    .scan-options {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+      margin-bottom: 10px;
+      flex-wrap: wrap;
+    }
+    .toggle {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 0.82rem;
+      color: var(--muted);
+      cursor: pointer;
+      user-select: none;
+    }
+    .toggle input { width: 18px; height: 18px; accent-color: var(--accent-solid); }
+    #drop-zone {
+      border: 2px dashed rgba(168,85,247,0.5);
+      border-radius: 14px;
+      padding: 28px 14px;
+      text-align: center;
+      cursor: pointer;
+      transition: 0.2s;
+      background: rgba(15,12,26,0.5);
+    }
+    #drop-zone.over { border-color: #22d3ee; background: rgba(34,211,238,0.08); }
+    #drop-zone p { margin: 4px 0; color: #c7d2fe; font-size: 0.9rem; }
+    #drop-zone .big { font-size: 1.05rem; font-weight: 700; color: #ede9fe; }
     #result-area { display: none; text-align: center; }
     #result-value {
-      font-size: 1.25rem;
+      font-size: 1.2rem;
       font-weight: 700;
       word-break: break-all;
-      margin: 12px 0;
+      margin: 10px 0;
       background: var(--accent);
       -webkit-background-clip: text;
       -webkit-text-fill-color: transparent;
+      background-clip: text;
     }
     #output {
       background: white;
       border-radius: 12px;
       padding: 12px;
-      margin: 12px 0;
+      margin: 12px auto;
       display: inline-block;
+      max-width: 100%;
     }
-    #output canvas, #output svg { max-width: 100%; height: auto; }
+    #output canvas, #output svg, #output img { max-width: 100%; height: auto; }
+    .tabs { display: flex; gap: 6px; margin: 10px 0; }
+    .tabs button {
+      flex: 1;
+      padding: 9px;
+      font-size: 0.85rem;
+      background: rgba(255,255,255,0.06);
+      margin-top: 0;
+    }
+    .tabs button.active { background: var(--accent); }
+    .color-row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin: 10px 0;
+      justify-content: center;
+    }
+    input[type="color"] {
+      width: 44px; height: 34px; padding: 2px; border: none; background: none; border-radius: 8px;
+    }
+    .hint { color: var(--muted); font-size: 0.82rem; margin-top: 6px; }
+    #product-info { text-align: left; margin-top: 12px; }
+    #content-info, #repair-note { text-align: left; }
     .history-item {
       display: flex;
       justify-content: space-between;
       align-items: center;
       padding: 10px 0;
       border-bottom: 1px solid var(--border);
+      font-size: 0.9rem;
+      gap: 8px;
+    }
+    .history-item span { flex: 1; word-break: break-all; }
+    .history-item button { width: auto; padding: 6px 12px; font-size: 0.78rem; margin: 0; }
+    .bottom-nav {
+      position: fixed;
+      bottom: 0; left: 0; right: 0;
+      background: rgba(10,8,23,0.92);
+      backdrop-filter: blur(16px);
+      border-top: 1px solid var(--border);
+      display: flex;
+      justify-content: space-around;
+      padding: 8px 6px calc(8px + env(safe-area-inset-bottom));
+      z-index: 100;
+      max-width: 520px;
+      margin: 0 auto;
+    }
+    .bottom-nav button {
+      flex: 1;
+      background: transparent;
+      border: none;
+      color: var(--muted);
+      font-size: 0.7rem;
+      font-weight: 600;
+      padding: 6px 2px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 3px;
+      border-radius: 12px;
+    }
+    .bottom-nav button.active { color: #e9d5ff; }
+    .bottom-nav button .icon { font-size: 1.35rem; }
+    .section { display: none; }
+    .section.active { display: block; }
+    #status-bar {
+      position: fixed;
+      top: 12px; left: 50%;
+      transform: translateX(-50%);
+      background: rgba(30,27,50,0.95);
+      border: 1px solid var(--border);
+      padding: 8px 16px;
+      border-radius: 20px;
+      font-size: 0.85rem;
+      z-index: 200;
+      display: none;
+      white-space: nowrap;
+      max-width: 90%;
+    }
+    input, select, textarea {
+      width: 100%;
+      padding: 12px 14px;
+      border-radius: 12px;
+      border: 1px solid var(--border);
+      background: rgba(0,0,0,0.3);
+      color: var(--text);
       font-size: 0.95rem;
+      margin-top: 8px;
     }
-    .history-item button {
-      width: auto;
-      padding: 6px 12px;
-      font-size: 0.8rem;
+    input:focus { outline: 2px solid #a855f7; border-color: transparent; }
+    details.advanced {
+      margin-top: 10px;
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 8px 12px;
     }
-    .hint { color: var(--muted); font-size: 0.85rem; margin-top: 8px; }
-    .color-row {
+    details.advanced summary {
+      cursor: pointer;
+      color: var(--muted);
+      font-size: 0.85rem;
+      font-weight: 600;
+      list-style: none;
       display: flex;
       align-items: center;
-      gap: 10px;
-      margin: 10px 0;
+      gap: 6px;
     }
-    input[type="color"] {
-      width: 48px;
-      height: 36px;
-      padding: 2px;
-      border: none;
-      background: none;
-    }
+    details.advanced summary::-webkit-details-marker { display: none; }
+    details.advanced[open] summary { margin-bottom: 8px; color: #c4b5fd; }
   </style>
 </head>
 <body>
 
-  <h1>G-scan-qrcode</h1>
-  <p class="subtitle">Scanner • Régénérer • Générer — rapide & moderne</p>
+  <div id="status-bar"></div>
 
-  <!-- SCAN -->
-  <div class="card">
-    <div id="reader-wrap" style="position:relative;border-radius:12px;overflow:hidden">
-      <div id="reader"></div>
-      <canvas id="lens-overlay" style="position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none;z-index:5"></canvas>
+  <h1>⚡ G-scan</h1>
+  <p class="subtitle">Scanner • Analyser • Régénérer — tout en local</p>
+
+  <!-- SECTION SCAN -->
+  <div class="section active" id="sec-scan">
+
+    <div class="card">
+      <div class="mode-bar" id="scan-mode-bar">
+        <button class="active" data-mode="single">1 scan</button>
+        <button data-mode="continuous">Continu</button>
+        <button data-mode="photo">Photo IA</button>
+      </div>
+
+      <div id="reader-wrap">
+        <div id="reader"></div>
+        <canvas id="lens-overlay"></canvas>
+      </div>
+      <div id="photo-scan" style="display:none"></div>
+
+      <div class="scan-options" id="scan-options" style="display:none">
+        <label class="toggle"><input type="checkbox" id="flash-auto" checked> Flash auto</label>
+        <button class="sm secondary" id="flash-btn" style="display:none">🔦</button>
+        <button class="sm secondary" id="fullscreen-btn">⛶</button>
+      </div>
+
+      <button id="start-btn">▶ Démarrer la caméra</button>
+      <button id="stop-btn" class="secondary" style="display:none">⏹ Arrêter</button>
+
+      <div id="photo-mode-area" style="display:none">
+        <div id="drop-zone">
+          <p class="big">🖼️ Glisse une photo ici</p>
+          <p>ou appuie pour en choisir une</p>
+          <p style="font-size:0.78rem;color:#9ca3af;margin-top:8px">QR • DataMatrix • codes-barres • texte imprimé</p>
+        </div>
+        <input type="file" id="photo-input" accept="image/*" capture="environment" style="display:none">
+        <div class="btn-row" style="margin-top:10px">
+          <button class="secondary" id="photo-cam-btn">📸 Prendre une photo</button>
+        </div>
+        <p class="hint" id="ocr-status" style="display:none"></p>
+      </div>
+
+      <details class="advanced">
+        <summary>⚙️ Options avancées</summary>
+        <button class="secondary" id="ocr-btn">🔎 OCR texte à côté du code</button>
+        <button class="secondary" id="ocr-free-btn">📄 OCR texte libre (photo)</button>
+        <button class="secondary" id="ai-btn">🤖 Identifier avec Gemini (photo)</button>
+        <button class="ghost" id="ai-key-btn">Clé API Gemini</button>
+        <input type="password" id="ai-key" placeholder="Clé Gemini (aistudio.google.com)" style="display:none">
+        <input type="text" id="ai-question" placeholder="Question optionnelle pour l'IA…" style="display:none">
+        <input type="file" id="ai-photo-input" accept="image/*" capture="environment" style="display:none">
+        <input type="file" id="photo-ocr-input" accept="image/*" capture="environment" style="display:none">
+        <div class="hint" id="ai-privacy" style="display:none">ℹ️ L'IA Gemini envoie la photo à Google. Le scan local reste 100 % sur ton appareil.</div>
+        <div id="ai-answer" style="display:none"></div>
+      </details>
     </div>
-    <div id="lens-hint" class="hint" style="display:none"></div>
-    <!-- Zone cachée nécessaire pour le scan de photo (html5-qrcode exige un élément) -->
-    <div id="photo-scan" style="display:none"></div>
-    <button id="start-btn">▶ Démarrer la caméra</button>
-    <button class="secondary" id="stop-btn" style="display:none">⏹ Arrêter la caméra</button>
-    <button class="secondary" id="flash-btn" style="display:none">🔦 Flash : auto</button>
-    <div class="hint" id="zoom-hint" style="display:none">🔍 Zoom automatique : l'app règle seule la mise au point et le niveau de zoom pour lire instantanément, même les petits codes.</div>
-    <button class="secondary" id="ocr-btn">🔎 Lire le texte à côté du code (OCR)</button>
-    <button class="secondary" id="ocr-free-btn">📄 OCR texte libre (photo)</button>
-    <button class="secondary" id="fullscreen-btn">⛶ Caméra plein écran</button>
-    <button class="secondary" id="photo-btn">📸 Scanner depuis une photo</button>
-    <input type="file" id="photo-input" accept="image/*" capture="environment" style="display:none" />
-    <input type="file" id="photo-ocr-input" accept="image/*" capture="environment" style="display:none" />
-    <!-- IA vision (Gemini — clé gratuite, sans carte bancaire) -->
-    <button class="secondary" id="ai-btn">🤖 Identifier avec l'IA (photo)</button>
-    <button class="secondary" id="ai-key-btn">⚙️ Clé IA Gemini</button>
-    <input type="password" id="ai-key" placeholder="Colle ta clé Gemini (gratuite : aistudio.google.com → Get API key)" style="display:none" />
-    <input type="text" id="ai-question" placeholder="Question optionnelle pour l'IA (ex. « où jeter ce paquet ? »)" style="display:none" />
-    <input type="file" id="ai-photo-input" accept="image/*" capture="environment" style="display:none" />
-    <div class="hint" id="ai-privacy" style="display:none">ℹ️ L'identification IA envoie la photo aux serveurs Google pour analyse. Le scan de codes, lui, reste 100 % sur ton téléphone.</div>
-    <div id="ai-answer" style="display:none"></div>
-    <div class="hint" id="ocr-status" style="display:none"></div>
-  </div>
 
-  <!-- NFC SMART DATA -->
-  <div class="card">
-    <strong>Smart Data — puce NFC</strong>
-    <button class="secondary" id="nfc-read-btn">📡 Lire une puce NFC</button>
-    <button class="secondary" id="nfc-write-btn">✍️ Écrire le code actuel sur la puce</button>
-    <div id="nfc-status" class="hint" style="display:none"></div>
-  </div>
-
-  <!-- ANALYSE IA (moteur IA-G-scan intégré) -->
-  <div class="card">
-    <strong>🤖 Analyse IA intégrée</strong>
-    <p class="hint">Analyse profonde d'une photo : tous les codes (même abîmés ou mal éclairés) + le texte imprimé à côté, avec classification et meilleur format de régénération. Utile quand une photo ne se scanne pas.</p>
-    <div id="ia-drop" style="border:2px dashed rgba(168,85,247,.55);border-radius:12px;padding:20px 12px;text-align:center;cursor:pointer;margin:8px 0">
-      <div style="font-size:1.8rem">🖼️</div>
-      <div><b>Glisse une photo ici</b> ou appuie pour en choisir une</div>
-      <div class="hint">étiquette, colis, timbre, QR abîmé…</div>
+    <div class="card">
+      <h2>📡 Smart Data — NFC</h2>
+      <div class="btn-row">
+        <button class="secondary" id="nfc-read-btn">Lire puce</button>
+        <button class="secondary" id="nfc-write-btn">Écrire code</button>
+      </div>
+      <div id="nfc-status" class="hint" style="display:none"></div>
     </div>
-    <input type="file" id="ia-file" accept="image/*" capture="environment" style="display:none">
-    <button class="secondary" id="ia-cam-btn">📸 Analyser une photo</button>
-    <div id="ia-status" class="hint" style="display:none"></div>
-    <div id="ia-results"></div>
-    <p class="hint">💡 L'app sœur <a href="https://jrulio38.github.io/IA-G-scan/" target="_blank" rel="noopener">IA-G-scan</a> reste disponible en extension pour les analyses manuelles détaillées (suggestions, historique d'analyses). ⚠️ Le moteur OCR se télécharge la 1<sup>re</sup> fois (connexion internet nécessaire une fois).</p>
   </div>
 
-  <!-- GENERATE -->
-  <div class="card">
-    <strong>Générer un code</strong>
-    <input type="text" id="gen-input" placeholder="Texte, URL, numéro..." />
-    <button id="gen-qr">Générer QR Code</button>
-    <button class="secondary" id="gen-bc">Générer Code-barres</button>
-    <button class="secondary" id="gen-dm">Générer DataMatrix</button>
-    <p class="hint">Le type de code-barres se change d'un seul bouton dans la carte résultat (🏷️ Type).</p>
+  <!-- SECTION GENERATE -->
+  <div class="section" id="sec-gen">
+    <div class="card">
+      <h2>✨ Générer un code</h2>
+      <textarea id="gen-input" rows="3" placeholder="Colle ou tape le texte / numéro à encoder…"></textarea>
+      <div class="btn-row" style="margin-top:10px">
+        <button id="gen-qr">QR Code</button>
+        <button class="secondary" id="gen-bc">Code-barres</button>
+        <button class="secondary" id="gen-dm">DataMatrix</button>
+      </div>
+      <p class="hint">Le type exact du code-barres se change ensuite dans le résultat (🏷️ Type).</p>
+    </div>
   </div>
 
-  <!-- RESULT -->
+  <!-- RESULT (shared, always available) -->
   <div class="card" id="result-area">
     <div class="hint">Code détecté / généré :</div>
     <div id="result-value"></div>
-    <button class="secondary" id="copy-btn" style="margin-top:0">📋 Copier la valeur</button>
+    <button class="secondary" id="copy-btn" style="margin-top:0">📋 Copier</button>
     <div id="repair-note" class="hint" style="display:none"></div>
     <div id="content-info" class="hint" style="display:none"></div>
     <div id="content-actions"></div>
@@ -250,7 +416,7 @@
 
     <div class="color-row">
       <span class="hint">Couleur :</span>
-      <input type="color" id="code-color" value="#000000" />
+      <input type="color" id="code-color" value="#000000">
     </div>
 
     <div class="tabs">
@@ -262,36 +428,47 @@
 
     <div id="output"></div>
 
-    <button id="download-btn">💾 Télécharger PNG</button>
-    <button class="secondary" id="print-btn">🖨️ Imprimer</button>
-    <button class="secondary" id="clear-btn">🗑️ Effacer</button>
+    <div class="btn-row">
+      <button id="download-btn">💾 PNG</button>
+      <button class="secondary" id="print-btn">🖨️</button>
+      <button class="secondary" id="clear-btn">🗑️</button>
+    </div>
   </div>
 
-  <!-- HISTORY -->
-  <div class="card">
-    <strong>Historique</strong>
-    <div id="history-list" class="hint">Aucun code pour le moment</div>
-    <button class="secondary" id="clear-history" style="margin-top:12px">Tout effacer</button>
+  <!-- SECTION HISTORY -->
+  <div class="section" id="sec-hist">
+    <div class="card">
+      <h2>🕘 Historique</h2>
+      <div id="history-list" class="hint">Aucun code pour le moment</div>
+      <button class="ghost" id="clear-history" style="margin-top:12px">Tout effacer</button>
+    </div>
   </div>
 
-  <p class="hint" style="text-align:center;margin-top:20px">
-    🔒 Tout reste sur ton appareil — rien n’est envoyé sur internet
+  <p class="hint" style="text-align:center;margin-top:16px;margin-bottom:20px">
+    🔒 Tout reste sur ton appareil — rien n’est envoyé (sauf Gemini si tu l’actives)
   </p>
 
+  <nav class="bottom-nav">
+    <button class="active" data-sec="sec-scan"><span class="icon">📷</span>Scanner</button>
+    <button data-sec="sec-gen"><span class="icon">✨</span>Générer</button>
+    <button data-sec="sec-hist"><span class="icon">🕘</span>Historique</button>
+  </nav>
+
   <script>
-    // ===== Service Worker =====
     if ('serviceWorker' in navigator) {
-      navigator.serviceWorker.register('./sw.js')
-        .then(() => console.log('Service Worker enregistré'))
-        .catch(err => console.log('SW erreur:', err));
+      navigator.serviceWorker.register('./sw.js').catch(() => {});
     }
 
-    // ===== Variables =====
     let html5QrCode = null;
-    let photoScanner = null;
     let currentValue = "";
     let currentType = "qr";
-    // Un seul bouton pour changer de type de code-barres (cycle à chaque appui)
+    let continuousMode = false;
+    let history = JSON.parse(localStorage.getItem("gscan-history") || "[]");
+    let torchTrack = null;
+    let ocrWorker = null;
+    let lensDetector = null;
+    let lensRAF = null;
+
     const BC_TYPES = [
       { code: "CODE128", label: "Code 128" },
       { code: "EAN13",   label: "EAN-13" },
@@ -300,127 +477,299 @@
       { code: "CODE39",  label: "Code 39" },
       { code: "ITF",     label: "ITF (2/5)" },
       { code: "ITF14",   label: "ITF-14 (colis)" },
-      { code: "CODABAR", label: "Codabar" }
     ];
     let bcIndex = 0;
-    let history = JSON.parse(localStorage.getItem("gscan-history") || "[]");
-    let torchMode = localStorage.getItem("gscan-torch") || "auto";
-    let torchTrack = null;
-    // (zoom auto : variables déclarées plus bas avec setupZoom)
-    let ocrWorker = null;
-    let ocrBusy = false;
 
-    // ===== OCR (type Google Lens) =====
-    const ocrCandidates = [
-      /[A-Z]{2}\d{9}[A-Z]{2}/g,                          // n° postal (ex. RA123456789FR)
-      /\d[A-Z]\s?\d{3}\s?\d{3}\s?\d{3}/g,           // colis Chronopost/DPD
-      /\bSD\d{6,}/gi,                                   // SD (Smart Data)
-      /\b[A-Z0-9]{10,}\b/g                              // alphanumérique long
-    ];
+    const LENS_FORMATS = ["qr_code","ean_13","ean_8","upc_a","upc_e","code_39","code_93","code_128","codabar","itf","data_matrix","aztec","pdf417"];
 
-    function extractTrackingNumbers(text) {
-      const found = new Set();
-      for (const re of ocrCandidates) {
-        const m = text.match(re);
-        if (m) m.forEach(x => { if (/\d/.test(x)) found.add(x.trim()); });
-      }
-      const list = [...found].sort((a, b) => b.length - a.length);
-      // dédup : retire les sous-chaînes déjà couvertes
-      return list.filter((s, i) => !list.slice(0, i).some(big => big.includes(s)));
+    function toast(msg, ms = 2200) {
+      const el = document.getElementById("status-bar");
+      el.textContent = msg;
+      el.style.display = "block";
+      clearTimeout(el._t);
+      el._t = setTimeout(() => el.style.display = "none", ms);
     }
 
-    async function runOcr(imageLike, label) {
-      if (ocrBusy || typeof Tesseract === "undefined") return;
-      ocrBusy = true;
-      showOcrProgress(label);
-      try {
-        if (!ocrWorker) ocrWorker = await Tesseract.createWorker("eng+fra");
-        const { data } = await ocrWorker.recognize(imageLike);
-        const text = (data && data.text) ? data.text : "";
-        const nums = extractTrackingNumbers(text.replace(/\s+/g, " "));
-        if (nums.length > 0) {
-          showResult(nums[0], "qr");
-        } else if (text.trim().length > 3) {
-          const best = text.trim().split(/\n/).filter(l => l.trim().length > 3)[0];
-          showResult(best || text.trim(), "qr");
-        } else {
-          alert("Aucun texte lisible détecté.\nEssaie une photo plus nette et mieux cadrée.");
+    function showSection(id) {
+      document.querySelectorAll(".section").forEach(s => s.classList.remove("active"));
+      document.getElementById(id).classList.add("active");
+      document.querySelectorAll(".bottom-nav button").forEach(b => {
+        b.classList.toggle("active", b.dataset.sec === id);
+      });
+      if (currentValue) document.getElementById("result-area").style.display = "block";
+    }
+
+    document.querySelectorAll(".bottom-nav button").forEach(b => {
+      b.onclick = () => showSection(b.dataset.sec);
+    });
+
+    document.querySelectorAll("#scan-mode-bar button").forEach(b => {
+      b.onclick = () => {
+        document.querySelectorAll("#scan-mode-bar button").forEach(x => x.classList.remove("active"));
+        b.classList.add("active");
+        const mode = b.dataset.mode;
+        continuousMode = (mode === "continuous");
+        const isPhoto = mode === "photo";
+        document.getElementById("start-btn").style.display = isPhoto ? "none" : "block";
+        document.getElementById("stop-btn").style.display = "none";
+        document.getElementById("photo-mode-area").style.display = isPhoto ? "block" : "none";
+        document.getElementById("reader-wrap").style.display = "none";
+        document.getElementById("scan-options").style.display = "none";
+        if (html5QrCode) {
+          try { html5QrCode.stop(); } catch(e){}
+          html5QrCode = null;
         }
-      } catch (err) {
-        alert("La lecture de texte n'a pas fonctionné.\nVérifie ta connexion internet (le moteur OCR se télécharge la 1re fois) et réessaie.");
-      } finally {
-        ocrBusy = false;
-        document.getElementById("ocr-status").style.display = "none";
-      }
-    }
+      };
+    });
 
-    function showOcrProgress(label) {
-      const st = document.getElementById("ocr-status");
-      st.style.display = "block";
-      st.textContent = "⏳ " + label + " — analyse OCR en cours (1re fois : téléchargement du moteur, ~10 Mo)…";
+    function saveHistory(val) {
+      if (!val) return;
+      history = history.filter(h => h !== val);
+      history.unshift(val);
+      if (history.length > 40) history = history.slice(0, 40);
+      localStorage.setItem("gscan-history", JSON.stringify(history));
+      renderHistory();
     }
-
-    async function ocrFromCamera() {
-      const video = document.querySelector("#reader video");
-      if (!video || !video.videoWidth) {
-        // fallback : demander une photo si la caméra n'est pas lancée
-        document.getElementById("photo-ocr-input").value = "";
-        document.getElementById("photo-ocr-input").click();
+    function renderHistory() {
+      const list = document.getElementById("history-list");
+      if (!history.length) {
+        list.innerHTML = '<p class="hint">Aucun code pour le moment</p>';
         return;
       }
-      const canvas = document.createElement("canvas");
-      canvas.width = video.videoWidth;
-      canvas.height = video.videoHeight;
-      canvas.getContext("2d").drawImage(video, 0, 0);
-      await runOcr(canvas, "Image caméra");
+      list.innerHTML = history.map((v, i) =>
+        `<div class="history-item"><span>${esc(v)}</span><button class="sm secondary" data-i="${i}">↩</button></div>`
+      ).join("");
+      list.querySelectorAll("button").forEach(btn => {
+        btn.onclick = () => {
+          showResult(history[+btn.dataset.i]);
+          showSection("sec-scan");
+        };
+      });
+    }
+    document.getElementById("clear-history").onclick = () => {
+      history = [];
+      localStorage.removeItem("gscan-history");
+      renderHistory();
+    };
+    renderHistory();
+
+    function esc(s) {
+      return String(s || "").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
     }
 
-    function cropCanvas(canvas, x, y, w, h) {
-      const c = document.createElement("canvas");
-      c.width = w; c.height = h;
-      c.getContext("2d").drawImage(canvas, x, y, w, h, 0, 0, w, h);
-      return c;
+    function showResult(val, preferredType) {
+      if (!val) return;
+      currentValue = String(val).trim();
+      saveHistory(currentValue);
+
+      const repaired = repairValue(currentValue);
+      if (repaired.note) {
+        currentValue = repaired.value;
+        document.getElementById("repair-note").textContent = repaired.note;
+        document.getElementById("repair-note").style.display = "block";
+      } else {
+        document.getElementById("repair-note").style.display = "none";
+      }
+
+      document.getElementById("result-value").textContent = currentValue;
+      document.getElementById("result-area").style.display = "block";
+
+      const cls = iaClassify(currentValue);
+      currentType = preferredType || (cls.fmt === "barcode" ? "barcode" : cls.fmt === "dm" ? "dm" : "qr");
+      document.querySelectorAll(".tabs button").forEach(b => {
+        b.classList.toggle("active", b.dataset.type === currentType);
+      });
+
+      renderCode();
+      updateContentInfo(currentValue);
+      tryLoadProduct(currentValue);
     }
 
-    async function ocrFromPhoto(file, freeText = false) {
-      const bitmap = await createImageBitmap(file);
-      const canvas = document.createElement("canvas");
-      canvas.width = bitmap.width;
-      canvas.height = bitmap.height;
-      canvas.getContext("2d").drawImage(bitmap, 0, 0);
-      const W = canvas.width, H = canvas.height;
-      const crops = [
-        canvas,
-        cropCanvas(canvas, 0, Math.floor(H / 2), W, Math.floor(H / 2)),
-        cropCanvas(canvas, 0, 0, W, Math.floor(H / 2)),
-        cropCanvas(canvas, 0, Math.floor(H / 4), W, Math.floor(H / 2))
-      ];
-      for (const c of crops) {
-        await ocrWorkerReady();
-        const { data } = await ocrWorker.recognize(c);
-        const text = ((data && data.text) || "").replace(/\s+/g, " ").trim();
-        if (freeText && text.length > 3) {
-          document.getElementById("ocr-status").style.display = "none";
-          showResult(text, "qr");
-          const info = document.getElementById("content-info");
-          info.textContent = "📝 Texte libre lu sur la photo — appuie sur « 📋 Copier la valeur »";
-          info.style.display = "block";
+    function updateContentInfo(v) {
+      const info = document.getElementById("content-info");
+      const actions = document.getElementById("content-actions");
+      actions.innerHTML = "";
+      info.style.display = "none";
+
+      if (/^https?:\/\//i.test(v)) {
+        info.textContent = "🌐 Lien web détecté";
+        info.style.display = "block";
+        const a = document.createElement("a");
+        a.href = v; a.target = "_blank"; a.rel = "noopener";
+        a.innerHTML = `<button class="secondary" style="margin-top:8px">Ouvrir le lien</button>`;
+        actions.appendChild(a);
+      } else if (/^(tel:|mailto:)/i.test(v)) {
+        info.textContent = "📞 Contact détecté";
+        info.style.display = "block";
+      } else if (/^geo:/i.test(v)) {
+        info.textContent = "📍 Position GPS";
+        info.style.display = "block";
+      } else if (/^(MECARD:|BEGIN:VCARD)/i.test(v)) {
+        info.textContent = "👤 Carte de visite";
+        info.style.display = "block";
+      } else if (/^\d{8,14}$/.test(v)) {
+        info.textContent = "🏷️ Code-barres produit / colis";
+        info.style.display = "block";
+      }
+      carrierButtons(v, actions);
+      // 🤖 IA toujours accessible : identifier le type de produit quel qu'il soit
+      const bAi = document.createElement("button");
+      bAi.className = "sm secondary";
+      bAi.style.marginTop = "8px";
+      bAi.textContent = "🤖 Identifier avec l'IA (type de produit)";
+      bAi.onclick = async () => {
+        const key = localStorage.getItem("gscan-gemini") || "";
+        if (!key) {
+          document.getElementById("ai-key-btn").click();
+          toast("Colle d'abord ta clé Gemini (⚙️ Options avancées)");
           return;
         }
-        const nums = extractTrackingNumbers(text);
-        if (nums.length > 0) { document.getElementById("ocr-status").style.display = "none"; showResult(nums[0], "qr"); return; }
-      }
-      document.getElementById("ocr-status").style.display = "none";
-      alert(freeText
-        ? "Aucun texte lisible sur cette photo.\nEssaie une photo plus nette, plus proche et bien éclairée."
-        : "Aucun texte ni numéro de suivi détecté sur la photo.\nEssaie une photo plus nette.");
+        bAi.textContent = "🤖 L'IA réfléchit…";
+        toast("🤖 Identification par l'IA…");
+        const text = await aiCall(
+          "Quel est ce produit ou objet identifié par la valeur de code suivante : \"" + v + "\" ? " +
+          "Donne le type de produit (alimentaire, entretien, colis, livre, électronique…), " +
+          "la marque probable si identifiable, et des détails utiles. Réponds en français, en 3-4 lignes maximum. Si tu ne peux pas savoir, dis-le honnêtement.",
+          null, null, key);
+        document.getElementById("ai-answer").style.display = "block";
+        document.getElementById("ai-answer").innerHTML =
+          "<div class='card' style='margin-top:8px;text-align:left;font-size:0.9rem;white-space:pre-wrap'>" + esc(text || "Pas de réponse de l'IA.") + "</div>";
+        document.getElementById("result-area").scrollIntoView({ behavior: "smooth" });
+        bAi.textContent = "🤖 Identifier avec l'IA (type de produit)";
+      };
+      actions.appendChild(bAi);
     }
 
-    async function ocrWorkerReady() {
-      if (!ocrWorker) ocrWorker = await Tesseract.createWorker("eng+fra");
+    // Boutons de suivi transporteurs (UPS, DHL, FedEx, Chronopost, La Poste…)
+    const CARRIERS = [
+      { name: "La Poste / Colissimo", re: /^[A-Z]{2}\s?\d{9}\s?[A-Z]{2}$/i, url: v => "https://www.laposte.fr/outils/suivre-vos-envois?code=" + encodeURIComponent(v) },
+      { name: "Chronopost", re: /^1[A-Z]\s?\d{3}\s?\d{3}\s?\d{3}(\s?\d)?$/i, url: v => "https://www.chronopost.fr/fr/tracking?numero=" + encodeURIComponent(v) },
+      { name: "UPS", re: /^1Z[0-9A-Z]{16}$/i, url: v => "https://www.ups.com/track?tracknum=" + encodeURIComponent(v) },
+      { name: "DHL", re: /^(JD|JJD)[0-9A-Z]{8,24}$/i, url: v => "https://www.dhl.com/fr-en/home/tracking.html?tracking-id=" + encodeURIComponent(v) },
+      { name: "FedEx", re: /^\d{12}$/, url: v => "https://www.fedex.com/fedextrack/?trknbr=" + encodeURIComponent(v) },
+      { name: "Mondial Relay", re: /^\d{15}$|^\d{8}$/, url: v => "https://parcelsapp.com/fr/tracking/" + encodeURIComponent(v) }
+    ];
+    function carrierButtons(v, zone) {
+      CARRIERS.forEach(c => {
+        if (!c.re.test(v)) return;
+        const a = document.createElement("a");
+        a.href = c.url(v);
+        a.target = "_blank";
+        a.rel = "noopener";
+        a.style.marginTop = "8px";
+        a.innerHTML = "<button class='sm secondary'>📮 Suivre " + esc(c.name) + "</button>";
+        zone.appendChild(a);
+      });
+      // Universel : tout numéro de colis alnum 9-25 avec ≥8 chiffres
+      if (/^[A-Z0-9\s]{9,25}$/i.test(v) && (v.match(/\d/g) || []).length >= 8 && !CARRIERS.some(c => c.re.test(v))) {
+        const a = document.createElement("a");
+        a.href = "https://parcelsapp.com/fr/tracking/" + encodeURIComponent(v);
+        a.target = "_blank";
+        a.rel = "noopener";
+        a.style.marginTop = "8px";
+        a.innerHTML = "<button class='sm secondary'>📮 Suivre ce colis (tous transporteurs)</button>";
+        zone.appendChild(a);
+      }
     }
-    let torchAutoTimer = null;
-    let nfcActive = false;
+
+    async function tryLoadProduct(barcode) {
+      const zone = document.getElementById("product-info");
+      zone.innerHTML = "";
+      if (!/^\d{8,14}$/.test(barcode)) return;
+
+      if (/^(97[89])\d{10}$/.test(barcode)) {
+        loadBookInfo(barcode);
+        return;
+      }
+
+      zone.innerHTML = "<p class='hint'>⏳ Recherche infos produit…</p>";
+      const sources = [
+        { url: "https://world.openfoodfacts.org/api/v2/product/" + barcode + ".json", label: "Open Food Facts" },
+        { url: "https://world.openbeautyfacts.org/api/v2/product/" + barcode + ".json", label: "Open Beauty Facts" },
+        { url: "https://world.openproductsfacts.org/api/v2/product/" + barcode + ".json", label: "Open Products Facts" }
+      ];
+      for (const src of sources) {
+        try {
+          const r = await fetch(src.url);
+          if (!r.ok) continue;
+          const j = await r.json();
+          if (j && j.status === 1 && j.product) {
+            renderProductCard(j.product, src.label, barcode);
+            return;
+          }
+        } catch (e) {}
+      }
+      zone.innerHTML = "<p class='hint'>ℹ️ Produit inconnu dans les bases libres — utilise le bouton 🤖 « Identifier avec l'IA » ci-dessus.</p>";
+    }
+
+    const SCORE_COLORS = { a: "#038141", b: "#85bb2f", c: "#fecb02", d: "#ee8100", e: "#e63e09", unknown: "#9ca3af" };
+    function scoreChip(letter, legend) {
+      const c = SCORE_COLORS[String(letter || "").toLowerCase()] || SCORE_COLORS.unknown;
+      return `<span style="display:inline-flex;align-items:center;justify-content:center;width:26px;height:26px;border-radius:6px;background:${c};color:#fff;font-weight:800;font-size:13px;margin-right:4px">${esc((letter||"?").toUpperCase())}</span><span style="font-size:11px;color:#c4b5fd;margin-right:10px">${esc(legend)}</span>`;
+    }
+
+    function renderProductCard(p, source, barcode) {
+      const zone = document.getElementById("product-info");
+      const img = p.image_front_small_url || p.image_url || "";
+      let chips = "";
+      if (p.nutriscore_grade) chips += scoreChip(p.nutriscore_grade, "Nutri-Score");
+      if (p.ecoscore_grade) chips += scoreChip(p.ecoscore_grade, "Éco-Score");
+      if (p.nova_group) chips += `<span style="display:inline-flex;align-items:center;height:26px;padding:0 8px;border-radius:6px;background:#7c3aed;color:#fff;font-weight:700;font-size:12px;margin-right:10px">NOVA ${esc(p.nova_group)}</span>`;
+      if (!chips) chips = "<span style='font-size:12px;color:#9ca3af'>Pas de score disponible</span>";
+
+      const categ = (p.categories_tags || []).slice(0, 2).map(c => c.replace(/^..:/, "")).join(" · ");
+      zone.innerHTML = `
+        <div style="display:flex;gap:12px;margin-top:8px;padding:12px;border:1px solid rgba(168,85,247,0.35);border-radius:12px;background:rgba(255,255,255,0.04);align-items:flex-start">
+          ${img ? `<img src="${esc(img)}" alt="" style="width:64px;height:64px;object-fit:contain;border-radius:8px;background:#fff;flex-shrink:0">` : ""}
+          <div style="flex:1;min-width:0">
+            <div style="font-weight:700;color:#ede9fe;word-break:break-word">${esc(p.product_name || "(nom inconnu)")}</div>
+            ${p.brands ? `<div style="color:#a78bfa;font-size:13px;margin-top:2px">${esc(p.brands)}</div>` : ""}
+            ${categ ? `<div style="color:#9ca3af;font-size:12px;margin-top:2px">📦 ${esc(categ)}</div>` : ""}
+            <div style="margin-top:8px;display:flex;flex-wrap:wrap;align-items:center">${chips}</div>
+            <div style="color:#6b7280;font-size:11px;margin-top:8px">Source : ${esc(source)} · ${esc(barcode)}</div>
+          </div>
+        </div>`;
+    }
+
+    async function loadBookInfo(isbn) {
+      const zone = document.getElementById("product-info");
+      zone.innerHTML = "<p class='hint'>⏳ Recherche livre…</p>";
+      try {
+        const r = await fetch("https://www.googleapis.com/books/v1/volumes?q=isbn:" + isbn);
+        const j = await r.json();
+        const it = j && j.items && j.items[0] && j.items[0].volumeInfo;
+        if (it) {
+          const img = (it.imageLinks && (it.imageLinks.thumbnail || it.imageLinks.smallThumbnail)) || "";
+          zone.innerHTML = `
+            <div style="display:flex;gap:12px;margin-top:8px;padding:12px;border:1px solid rgba(168,85,247,0.35);border-radius:12px;background:rgba(255,255,255,0.04)">
+              ${img ? `<img src="${esc(img)}" alt="" style="width:56px;height:84px;object-fit:contain;border-radius:6px;background:#fff">` : ""}
+              <div>
+                <div style="font-weight:700">📖 ${esc(it.title || "")}</div>
+                ${it.authors ? `<div style="color:#a78bfa;font-size:13px">✍️ ${esc(it.authors.join(", "))}</div>` : ""}
+                ${it.publisher ? `<div style="color:#9ca3af;font-size:12px">🏢 ${esc(it.publisher)}</div>` : ""}
+                <div style="color:#6b7280;font-size:11px;margin-top:6px">Google Books · ${esc(isbn)}</div>
+              </div>
+            </div>`;
+          return;
+        }
+      } catch(e) {}
+      zone.innerHTML = "<p class='hint'>ℹ️ Livre introuvable.</p>";
+    }
+
+    function iaClassify(v) {
+      v = String(v || "").trim();
+      if (/^(MECARD:|BEGIN:VCARD)/i.test(v)) return { name: "Contact", icon: "👤", fmt: "qr" };
+      if (/^https?:\/\//i.test(v)) return { name: "Lien web", icon: "🌐", fmt: "qr" };
+      if (/^(tel:|mailto:)/i.test(v)) return { name: "Téléphone / mail", icon: "📞", fmt: "qr" };
+      if (/^geo:/i.test(v)) return { name: "GPS", icon: "📍", fmt: "qr" };
+      if (/^(97[89])\d{10}$/.test(v)) return { name: "ISBN", icon: "📚", fmt: "barcode" };
+      if (/^\d{13}$/.test(v)) return { name: "EAN-13", icon: "🏷️", fmt: "barcode" };
+      if (/^\d{8}$/.test(v)) return { name: "EAN-8", icon: "🏷️", fmt: "barcode" };
+      if (/^\d{12}$/.test(v)) return { name: "UPC-A", icon: "🏷️", fmt: "barcode" };
+      if (/^[A-Z0-9]{8,}$/i.test(v) && v.length < 40) return { name: "Code / suivi", icon: "📦", fmt: "qr" };
+      if (v.length > 80) return { name: "Texte long", icon: "📄", fmt: "qr" };
+      return { name: "Données", icon: "🔖", fmt: "qr" };
+    }
 
     function eanKey(digits, w3) {
       let sum = 0;
@@ -434,723 +783,146 @@
       if (!/^\d+$/.test(v)) return { value: v, note: "" };
       if (v.length === 13) {
         const key = eanKey(v.slice(0, 12), false);
-        if (String(v[12]) === key) return { value: v, note: "✅ EAN-13 valide (clé vérifiée)" };
-        return { value: v.slice(0, 12) + key, note: "🔧 Clé EAN-13 corrigée (" + v[12] + " → " + key + ")" };
+        if (String(v[12]) === key) return { value: v, note: "✅ EAN-13 valide" };
+        return { value: v.slice(0, 12) + key, note: "🔧 Clé EAN-13 corrigée" };
       }
       if (v.length === 12) {
         const key = eanKey(v.slice(0, 11), true);
-        if (String(v[11]) === key) return { value: v, note: "✅ UPC-A valide (clé vérifiée)" };
-        return { value: v + eanKey(v, false), note: "🔧 Clé manquante : lu comme EAN-13" };
+        if (String(v[11]) === key) return { value: v, note: "✅ UPC-A valide" };
+        return { value: v + eanKey(v, false), note: "🔧 Converti en EAN-13" };
       }
-      if (v.length === 11) return { value: v + eanKey(v, true), note: "🔧 Clé UPC-A manquante ajoutée" };
       if (v.length === 8) {
         const key = eanKey(v.slice(0, 7), true);
-        if (String(v[7]) === key) return { value: v, note: "✅ EAN-8 valide (clé vérifiée)" };
-        return { value: v.slice(0, 7) + key, note: "🔧 Clé EAN-8 corrigée (" + v[7] + " → " + key + ")" };
+        if (String(v[7]) === key) return { value: v, note: "✅ EAN-8 valide" };
+        return { value: v.slice(0, 7) + key, note: "🔧 Clé EAN-8 corrigée" };
       }
-      if (v.length === 7) return { value: v + eanKey(v, true), note: "🔧 Clé EAN-8 manquante ajoutée" };
-      if (/^[A-Z]{2}\d{9}[A-Z]{2}$/.test(v)) return { value: v, note: "📮 Numéro de suivi postal détecté" };
       return { value: v, note: "" };
     }
 
-    function torchSupported() {
-      try { return !!(torchTrack && torchTrack.getCapabilities && torchTrack.getCapabilities().torch); } catch (e) { return false; }
-    }
-    function applyTorch(on) { if (torchTrack) torchTrack.applyConstraints({ advanced: [{ torch: !!on }] }).catch(() => {}); }
-    function stopAutoTorch() { if (torchAutoTimer) { clearInterval(torchAutoTimer); torchAutoTimer = null; } }
-    function updateFlashBtn() {
-      const btn = document.getElementById("flash-btn");
-      if (!torchTrack) { btn.style.display = "none"; stopAutoTorch(); return; }
-      btn.style.display = "block";
-      if (!torchSupported()) {
-        btn.textContent = "🔦 Flash indisponible (Android Chrome requis)";
-        return;
-      }
-      if (torchMode === "on") { btn.textContent = "🔦 Flash : allumé"; applyTorch(true); stopAutoTorch(); }
-      else if (torchMode === "off") { btn.textContent = "🔦 Flash : éteint"; applyTorch(false); stopAutoTorch(); }
-      else {
-        btn.textContent = "🔦 Flash : auto (lampe selon luminosité)";
-        stopAutoTorch();
-        const c = document.createElement("canvas"); c.width = 32; c.height = 24;
-        const ctx = c.getContext("2d");
-        let last = null;
-        torchAutoTimer = setInterval(() => {
-          const video = document.querySelector("#reader video");
-          if (!video || video.readyState < 2) return;
-          try {
-            ctx.drawImage(video, 0, 0, 32, 24);
-            const d = ctx.getImageData(0, 0, 32, 24).data;
-            let sum = 0;
-            for (let i = 0; i < d.length; i += 4) sum += (d[i] + d[i+1] + d[i+2]) / 3;
-            const shouldOn = (sum / (d.length / 4)) < 60;
-            if (shouldOn !== last) { applyTorch(shouldOn); last = shouldOn; }
-          } catch (e) {}
-        }, 1000);
-      }
-    }
-    document.getElementById("flash-btn").onclick = () => {
-      if (!torchSupported()) return;
-      torchMode = torchMode === "auto" ? "on" : (torchMode === "on" ? "off" : "auto");
-      localStorage.setItem("gscan-torch", torchMode);
-      updateFlashBtn();
-    };
+    function renderCode() {
+      const out = document.getElementById("output");
+      out.innerHTML = "";
+      const color = document.getElementById("code-color").value || "#000000";
+      document.getElementById("bc-cycle").style.display = currentType === "barcode" ? "block" : "none";
 
-    // ===== Suivi visuel du code (façon Google Lens) =====
-    // Encadrement cyan + étiquette (type, valeur, badge suivi/Smart Data) qui suit le code
-    // quand on bouge le téléphone. Uniquement sur les navigateurs avec BarcodeDetector
-    // (Chrome/Edge Android, Chrome PC). Le scan fonctionne quand même sans l'encadrement.
-    const LENS_FORMATS = ["qr_code", "ean_13", "ean_8", "upc_a", "upc_e", "code_39", "code_93", "code_128", "codabar", "itf", "data_matrix", "aztec", "pdf417"];
-    const LENS_LABELS = {
-      qr_code: "QR Code", ean_13: "EAN-13", ean_8: "EAN-8", upc_a: "UPC-A", upc_e: "UPC-E",
-      code_39: "Code 39", code_93: "Code 93", code_128: "Code 128", codabar: "Codabar",
-      itf: "ITF", data_matrix: "DataMatrix", aztec: "Aztec", pdf417: "PDF417"
-    };
-    let lensDetector = null;
-    let lensTimer = null;
-
-    // ===== ENCADREMENT ESTHÉTIQUE (nouveau style) =====
-    function lensRoundRect(ctx, x, y, w, h, r) {
-      ctx.beginPath();
-      ctx.moveTo(x + r, y);
-      ctx.arcTo(x + w, y, x + w, y + h, r);
-      ctx.arcTo(x + w, y + h, x, y + h, r);
-      ctx.arcTo(x, y + h, x, y, r);
-      ctx.arcTo(x, y, x + w, y, r);
-      ctx.closePath();
-    }
-
-    function lensStop() {
-      if (lensTimer) {
-        clearInterval(lensTimer);
-        lensTimer = null;
-      }
-      const c = document.getElementById("lens-overlay");
-      if (c) {
-        const ctx = c.getContext("2d");
-        if (ctx) ctx.clearRect(0, 0, c.width, c.height);
-        c.style.display = "none";
-      }
-    }
-
-    function lensTick(video, canvas) {
-      return (async () => {
-        try {
-          if (!video || video.readyState < 2) return;
-          const wrap = canvas.parentElement;
-          const w = wrap.clientWidth;
-          const h = wrap.clientHeight;
-          if (!w || !h) return;
-          const dpr = window.devicePixelRatio || 1;
-          if (canvas.width !== Math.round(w * dpr) || canvas.height !== Math.round(h * dpr)) {
-            canvas.width = Math.round(w * dpr);
-            canvas.height = Math.round(h * dpr);
-          }
-          const ctx = canvas.getContext("2d");
-          ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-          ctx.clearRect(0, 0, w, h);
-          const codes = await lensDetector.detect(video);
-          // ===== AUCUN CODE → viseur élégant =====
-          if (!codes || codes.length === 0) {
-            const gw = w * 0.78;
-            const gh = h * 0.52;
-            const gx = (w - gw) / 2;
-            const gy = (h - gh) / 2;
-            const pulse = 0.55 + 0.45 * Math.sin(Date.now() / 700);
-            // Fond semi-transparent autour du viseur
-            ctx.fillStyle = "rgba(0,0,0,0.28)";
-            ctx.fillRect(0, 0, w, h);
-            ctx.clearRect(gx, gy, gw, gh);
-            // Cadre principal
-            ctx.strokeStyle = `rgba(34, 211, 238, ${0.55 + 0.35 * pulse})`;
-            ctx.lineWidth = 2.5;
-            lensRoundRect(ctx, gx, gy, gw, gh, 16);
-            ctx.stroke();
-            // Coins accentués
-            const CL = 26;
-            ctx.lineWidth = 4;
-            ctx.strokeStyle = "rgba(168, 85, 247, 0.95)";
-            [[gx, gy, 1, 1], [gx + gw, gy, -1, 1], [gx + gw, gy + gh, -1, -1], [gx, gy + gh, 1, -1]].forEach(([x, y, dx, dy]) => {
-              ctx.beginPath();
-              ctx.moveTo(x + dx * CL, y);
-              ctx.lineTo(x, y);
-              ctx.lineTo(x, y + dy * CL);
-              ctx.stroke();
-            });
-            // Texte
-            ctx.font = "600 13px system-ui, sans-serif";
-            ctx.textAlign = "center";
-            ctx.fillStyle = `rgba(233, 213, 255, ${0.75 + 0.25 * pulse})`;
-            ctx.fillText("Vise un QR • code-barres • DataMatrix", w / 2, gy - 16);
-            return;
-          }
-          // ===== CODE DÉTECTÉ → suivi élégant =====
-          lastLensDetection = Date.now();
-          const vRect = video.getBoundingClientRect();
-          const cRect = canvas.getBoundingClientRect();
-          const sx = vRect.width / (video.videoWidth || 1);
-          const sy = vRect.height / (video.videoHeight || 1);
-          const ox = vRect.left - cRect.left;
-          const oy = vRect.top - cRect.top;
-          codes.forEach((cd) => {
-            const pts = (cd.cornerPoints || []).map(p => ({
-              x: ox + p.x * sx,
-              y: oy + p.y * sy
-            }));
-            if (pts.length < 4) return;
-            // Calcul du bounding box
-            const xs = pts.map(p => p.x);
-            const ys = pts.map(p => p.y);
-            const minX = Math.min(...xs) - 8;
-            const maxX = Math.max(...xs) + 8;
-            const minY = Math.min(...ys) - 8;
-            const maxY = Math.max(...ys) + 8;
-            const bw = maxX - minX;
-            const bh = maxY - minY;
-            // Fond très léger derrière le code
-            ctx.fillStyle = "rgba(6, 182, 212, 0.08)";
-            lensRoundRect(ctx, minX, minY, bw, bh, 12);
-            ctx.fill();
-            // Cadre principal arrondi (dégradé simulé)
-            ctx.strokeStyle = "rgba(34, 211, 238, 0.95)";
-            ctx.lineWidth = 3;
-            lensRoundRect(ctx, minX, minY, bw, bh, 12);
-            ctx.stroke();
-            // Coins violets plus élégants
-            const cornerLen = 18;
-            ctx.lineWidth = 4.5;
-            ctx.strokeStyle = "rgba(168, 85, 247, 1)";
-            ctx.lineCap = "round";
-            // Haut-gauche
-            ctx.beginPath();
-            ctx.moveTo(minX + cornerLen, minY);
-            ctx.lineTo(minX, minY);
-            ctx.lineTo(minX, minY + cornerLen);
-            ctx.stroke();
-            // Haut-droit
-            ctx.beginPath();
-            ctx.moveTo(maxX - cornerLen, minY);
-            ctx.lineTo(maxX, minY);
-            ctx.lineTo(maxX, minY + cornerLen);
-            ctx.stroke();
-            // Bas-droit
-            ctx.beginPath();
-            ctx.moveTo(maxX - cornerLen, maxY);
-            ctx.lineTo(maxX, maxY);
-            ctx.lineTo(maxX, maxY - cornerLen);
-            ctx.stroke();
-            // Bas-gauche
-            ctx.beginPath();
-            ctx.moveTo(minX + cornerLen, maxY);
-            ctx.lineTo(minX, maxY);
-            ctx.lineTo(minX, maxY - cornerLen);
-            ctx.stroke();
-            // ===== Étiquette élégante =====
-            const rawType = (cd.format || "unknown").toLowerCase();
-            const typeLabel = LENS_LABELS[rawType] || rawType.toUpperCase();
-            let value = (cd.rawValue || "").trim();
-            // Badges (suivi / Smart Data / lien / produit)
-            let badge = "";
-            if (/^[A-Z]{2}\d{9}[A-Z]{2}$/i.test(value)) badge = "  U0001F4EE suivi";
-            else if (/^SD\d{6,}/i.test(value) || /^SMARD/i.test(value)) badge = "  U0001F517 Smart Data";
-            else if (/^https?:\/\//i.test(value)) badge = "  U0001F310 lien";
-            else if (/^\d{8}$|^\d{12,14}$/.test(value)) badge = "  U0001F4E6 produit";
-            if (value.length > 28) value = value.slice(0, 26) + "…";
-            const label = typeLabel + (value ? "  ·  " + value : "") + badge;
-            ctx.font = "600 12px system-ui, sans-serif";
-            const tw = ctx.measureText(label).width + 20;
-            const th = 26;
-            const lx = Math.max(8, Math.min(minX, w - tw - 8));
-            const ly = Math.max(8, minY - th - 10);
-            // Fond flou de l'étiquette
-            ctx.fillStyle = "rgba(15, 12, 26, 0.82)";
-            lensRoundRect(ctx, lx, ly, tw, th, 8);
-            ctx.fill();
-            // Bordure fine
-            ctx.strokeStyle = "rgba(34, 211, 238, 0.5)";
-            ctx.lineWidth = 1;
-            lensRoundRect(ctx, lx, ly, tw, th, 8);
-            ctx.stroke();
-            // Texte
-            ctx.fillStyle = "#e9d5ff";
-            ctx.textAlign = "left";
-            ctx.textBaseline = "middle";
-            ctx.fillText(label, lx + 10, ly + th / 2);
+      try {
+        if (currentType === "qr") {
+          const canvas = document.createElement("canvas");
+          QRCode.toCanvas(canvas, currentValue, { width: 220, margin: 2, color: { dark: color, light: "#ffffff" } }, err => {
+            if (!err) out.appendChild(canvas);
           });
-        } catch (e) {
-          // silencieux
-        }
-      })();
-    }
-
-    async function lensStart(video) {
-      lensStop();
-      const hint = document.getElementById("lens-hint");
-      // Attend l'API native OU le polyfill (CDN parfois lent à la 1re visite,
-      // indispensable sur Firefox) — conservé de la V9.
-      if (!("BarcodeDetector" in window) && !window.__noBDPolyfill) {
-        if (hint) { hint.textContent = "⏳ Chargement du module d'encadrement..."; hint.style.display = "block"; }
-        for (let i = 0; i < 15 && !("BarcodeDetector" in window) && !window.__noBDPolyfill; i++) {
-          await new Promise(r => setTimeout(r, 200));
-        }
-      }
-      if (!("BarcodeDetector" in window)) {
-        if (hint) {
-          hint.textContent = "ℹ️ Encadrement non disponible sur ce navigateur (Chrome recommandé) — le scan fonctionne quand même.";
-          hint.style.display = "block";
-        }
-        return;
-      }
-      if (hint) hint.style.display = "none";
-      try {
-        lensDetector = lensDetector || new BarcodeDetector({ formats: LENS_FORMATS });
-      } catch (e) {
-        if (hint) {
-          hint.textContent = "ℹ️ Encadrement non supporté — le scan fonctionne.";
-          hint.style.display = "block";
-        }
-        return;
-      }
-      const canvas = document.getElementById("lens-overlay");
-      if (!canvas) return;
-      canvas.style.display = "block";
-      lensTimer = setInterval(() => {
-        lensTick(video, canvas);
-      }, 110);
-    }
-
-        // ===== Camera =====
-    document.getElementById("start-btn").onclick = async () => {
-      html5QrCode = new Html5Qrcode("reader");
-      try {
-        await html5QrCode.start(
-          { facingMode: "environment" },
-          {
-            fps: 15,
-            formatsToSupport: [
-              Html5QrcodeSupportedFormats.QR_CODE,
-              Html5QrcodeSupportedFormats.EAN_13,
-              Html5QrcodeSupportedFormats.EAN_8,
-              Html5QrcodeSupportedFormats.UPC_A,
-              Html5QrcodeSupportedFormats.UPC_E,
-              Html5QrcodeSupportedFormats.CODE_39,
-              Html5QrcodeSupportedFormats.CODE_93,
-              Html5QrcodeSupportedFormats.CODE_128,
-              Html5QrcodeSupportedFormats.CODABAR,
-              Html5QrcodeSupportedFormats.ITF,
-              Html5QrcodeSupportedFormats.ITF_14,
-              Html5QrcodeSupportedFormats.DATA_MATRIX,
-              Html5QrcodeSupportedFormats.AZTEC,
-              Html5QrcodeSupportedFormats.PDF_417
-            ].filter(Boolean)
-          },
-          (decoded) => {
-            if (navigator.vibrate) navigator.vibrate(150);
-            lensStop();
-            stopAutoZoom();
-            showResult(decoded);
-            html5QrCode.stop().then(() => {
-              document.getElementById("stop-btn").style.display = "none";
-              document.getElementById("start-btn").style.display = "block";
-            });
-          }
-        );
-        document.getElementById("start-btn").style.display = "none";
-        document.getElementById("stop-btn").style.display = "block";
-        const video = document.querySelector("#reader video");
-        if (video && video.srcObject) torchTrack = video.srcObject.getVideoTracks()[0] || null;
-        updateFlashBtn();
-        setupZoom(video);
-        lensStart(video);
-      } catch (err) {
-        const msg = String(err && err.message || err);
-        if (/permission|denied|NotAllowed/i.test(msg)) {
-          alert("📷 La caméra est bloquée.\n\nPour l'autoriser : appuie sur le petit cadenas 🔒 ou l'icône ⚙️ dans la barre d'adresse → Autoriser la caméra, puis recharge la page.");
-        } else if (/NotFound|no camera|Requested device/i.test(msg)) {
-          alert("📷 Aucune caméra détectée sur cet appareil.\n\nTu peux quand même scanner une photo avec « 📸 Scanner depuis une photo ».");
+        } else if (currentType === "dm") {
+          const canvas = document.createElement("canvas");
+          bwipjs.toCanvas(canvas, { bcid: "datamatrix", text: currentValue, scale: 4, height: 14, includetext: false, textcolor: color.replace("#","") });
+          out.appendChild(canvas);
         } else {
-          alert("📷 La caméra n'a pas pu démarrer.\n\nEssaie de fermer puis rouvrir l'application, ou utilise « 📸 Scanner depuis une photo ».\n\n(Détail : " + msg + ")");
-        }
-      }
-    };
-
-    // Caméra plein écran
-    document.getElementById("fullscreen-btn").onclick = () => {
-      const card = document.querySelector("#reader").closest(".card");
-      if (!document.fullscreenElement) {
-        (card.requestFullscreen ? card.requestFullscreen() : Promise.reject())
-          .catch(() => alert("⛶ Le plein écran n'est pas disponible sur ce navigateur."));
-      } else {
-        document.exitFullscreen();
-      }
-    };
-
-    document.getElementById("stop-btn").onclick = () => {
-      if (html5QrCode) {
-        lensStop();
-        stopAutoZoom();
-        stopAutoTorch();
-        applyTorch(false);
-        stopAutoZoom();
-        lensStop();
-        applyTorch(false);
-        torchTrack = null;
-        zoomTrack = null;
-        updateFlashBtn();
-        html5QrCode.stop().then(() => {
-          document.getElementById("stop-btn").style.display = "none";
-          document.getElementById("start-btn").style.display = "block";
-        });
-      }
-    };
-
-    document.getElementById("nfc-read-btn").onclick = async () => {
-      const status = document.getElementById("nfc-status");
-      status.style.display = "block";
-      if (!("NDEFReader" in window)) {
-        status.textContent = "⚠️ NFC non disponible ici. Web NFC : Android avec Chrome uniquement (pas iPhone, pas Firefox).";
-        return;
-      }
-      if (nfcActive) { status.textContent = "📡 Lecture déjà en cours — approche la puce..."; return; }
-      try {
-        const ndef = new NDEFReader();
-        await ndef.scan();
-        nfcActive = true;
-        status.textContent = "📡 Approche la puce NFC du téléphone...";
-        ndef.addEventListener("readingerror", () => { status.textContent = "⚠️ Puce détectée mais illisible — rapproche-la."; });
-        ndef.addEventListener("reading", ({ serialNumber, message }) => {
-          let text = "";
-          for (const rec of message.records) {
+          const canvas = document.createElement("canvas");
+          const type = BC_TYPES[bcIndex].code;
+          try {
+            JsBarcode(canvas, currentValue, { format: type, lineColor: color, width: 2, height: 80, displayValue: true, fontSize: 14, margin: 8 });
+            out.appendChild(canvas);
+          } catch (e) {
             try {
-              const data = new Uint8Array(rec.data.buffer || rec.data);
-              if (rec.recordType === "text") text += new TextDecoder("utf-8").decode(data.slice(1 + (data.length ? (data[0] & 0x3F) : 0)));
-              else if (rec.recordType === "url") text += new TextDecoder("utf-8").decode(data.slice(1));
-              else {
-                const t = new TextDecoder("utf-8").decode(data).trim();
-                if (t && /^[\x20-\x7E\u00C0-\u024F\n\r\t]*$/.test(t)) text += t;
-              }
-            } catch (e) {}
+              bwipjs.toCanvas(canvas, { bcid: type.toLowerCase().replace("upc","upca"), text: currentValue, scale: 3, height: 12, includetext: true });
+              out.appendChild(canvas);
+            } catch (e2) {
+              out.innerHTML = "<p class='hint'>Impossible de générer ce format pour cette valeur.</p>";
+            }
           }
-          const serial = serialNumber ? String(serialNumber).toUpperCase() : "";
-          if (text) { status.textContent = "✅ Puce lue (n° série : " + serial + ")"; showResult(text); }
-          else { status.textContent = "ℹ️ Puce lue (n° série : " + serial + ") sans texte exploitable."; showResult(serial || "(puce sans données)"); }
-        });
-      } catch (err) {
-        nfcActive = false;
-        status.textContent = "⚠️ Impossible de démarrer le NFC : " + err;
-      }
-    };
-    document.getElementById("nfc-write-btn").onclick = async () => {
-      const status = document.getElementById("nfc-status");
-      status.style.display = "block";
-      if (!currentValue) { status.textContent = "⚠️ Scanne ou génère d'abord un code — il sera écrit sur la puce."; return; }
-      if (!("NDEFReader" in window)) {
-        status.textContent = "⚠️ NFC non disponible ici. Web NFC : Android avec Chrome uniquement.";
-        return;
-      }
-      try {
-        const ndef = new NDEFReader();
-        status.textContent = "✍️ Approche la puce pour y écrire : " + currentValue.slice(0, 40);
-        await ndef.write({ records: [{ recordType: "text", data: currentValue }] });
-        status.textContent = "✅ Données écrites sur la puce NFC !";
-      } catch (err) {
-        status.textContent = "⚠️ Écriture NFC impossible : " + err;
-      }
-    };
-
-    // ===== Photo (corrigé : scanFile est une méthode d'INSTANCE) =====
-    document.getElementById("photo-btn").onclick = () => {
-      // Réinitialisation du champ pour pouvoir rescanner la même photo
-      document.getElementById("photo-input").value = "";
-      document.getElementById("photo-input").click();
-    };
-
-    document.getElementById("photo-input").onchange = async (e) => {
-      const file = e.target.files[0];
-      if (!file) return;
-
-      try {
-        if (!photoScanner) photoScanner = new Html5Qrcode("photo-scan");
-        const result = await photoScanner.scanFile(file, true);
-        showResult(result);
-      } catch (err) {
-        // Aucun code détecté : IA-G-scan analyse en arrière-plan (transparent),
-        // puis repli OCR local si l'app sœur ne trouve rien.
-        showOcrProgress("Photo sans code — 🤖 IA-G-scan analyse en arrière-plan…");
-        iaDeepAnalyze(file, (items) => {
-          if (items && items.length) { iaShowItems(items); return; }
-          showOcrProgress("Photo sans code — analyse OCR");
-          ocrFromPhoto(file).catch((e2) => {
-            alert("Aucun code ni texte trouvé dans l'image.\nEssaie avec une photo plus nette ou mieux cadrée.\n\n💡 L'app sœur IA-G-scan n'a rien trouvé non plus cette fois-ci (ou n'est pas encore installée).");
-          });
-        });
-      } finally {
-        // On vide le champ après usage
-        e.target.value = "";
-      }
-    };
-
-    // ===== MOTEUR IA INTÉGRÉ (fusion IA-G-scan) =====
-    // L'analyse profonde (codes sur image brute + contrastée + OCR avec
-    // netteté renforcée + classification + meilleur format) tourne
-    // MAINTENANT À L'INTÉRIEUR de l'app : plus rapide, plus fiable,
-    // 100 % sur ton appareil. L'app sœur IA-G-scan reste disponible en
-    // extension pour les analyses manuelles détaillées.
-    const IA_EXT_URL = "https://jrulio38.github.io/IA-G-scan/";
-    let iaBusy = false;
-    let iaWorker = null;
-
-    // Classification : nature du contenu + MEILLEUR format de régénération
-    const IA_FORMATS = [
-      { re: /^SD\d{6,}/i, icon: "🔗", type: "Smart Data La Poste", fmt: "dm", why: "Format d'origine des Smart Data : compact et robuste." },
-      { re: /^SMARD/i, icon: "🔗", type: "Smart Data La Poste", fmt: "dm", why: "Format d'origine des Smart Data : compact et robuste." },
-      { re: /^[A-Z]{2}\d{9}[A-Z]{2}$/i, icon: "📮", type: "Suivi postal international", fmt: "qr", why: "Le QR est universel et se lit même abîmé sur téléphone." },
-      { re: /^1[A-Z]\s?\d{3}\s?\d{3}\s?\d{3}(\s?\d)?$/i, icon: "🚚", type: "Chronopost (n° 1A…)", fmt: "dm", why: "Chronopost imprime ses étiquettes en DataMatrix." },
-      { re: /^1Z[0-9A-Z]{16}$/i, icon: "📦", type: "UPS", fmt: "barcode", why: "UPS utilise le Code 128 sur ses étiquettes." },
-      { re: /^(JD|JJD)[0-9A-Z]+$/i, icon: "📦", type: "DHL", fmt: "barcode", why: "DHL utilise le Code 128 sur ses étiquettes." },
-      { re: /^\d{12}$/, icon: "📦", type: "Colis 12 chiffres (FedEx…)", fmt: "barcode", why: "Code 128 : standard des transporteurs." },
-      { re: /^\d{14}$/, icon: "📦", type: "Colis 14 chiffres (DPD…)", fmt: "barcode", why: "Code 128 : standard des transporteurs." },
-      { re: /^\d{8}$/, icon: "📦", type: "Colis 8 chiffres (Colis Privé…)", fmt: "barcode", why: "Code 128 : standard des transporteurs." },
-      { re: /^WIFI:/i, icon: "📶", type: "Wi-Fi", fmt: "qr", why: "Les téléphones scannent les QR Wi-Fi nativement." },
-      { re: /^(MECARD:|BEGIN:VCARD)/i, icon: "👤", type: "Contact", fmt: "qr", why: "Les contacts se partagent en QR." },
-      { re: /^(https?:\/\/)/i, icon: "🌐", type: "Lien web", fmt: "qr", why: "Le QR ouvre le lien en un scan." },
-      { re: /^(tel:|mailto:)/i, icon: "📞", type: "Téléphone / e-mail", fmt: "qr", why: "Le QR déclenche l'appel ou le mail." },
-      { re: /^(97[89])\d{10}$/, icon: "📚", type: "ISBN (livre)", fmt: "barcode", why: "Les livres sont imprimés en EAN-13." },
-      { re: /^\d{13}$/, icon: "🥫", type: "Produit (EAN-13)", fmt: "barcode", why: "C'est le format imprimé sur les produits." }
-    ];
-    function iaClassify(v) {
-      v = String(v || "").trim();
-      for (const c of IA_FORMATS) { if (c.re.test(v)) return c; }
-      if (/^\d{10,}$/.test(v)) return { icon: "📦", type: "Numéro (colis probable)", fmt: "dm", why: "DataMatrix : compact, idéal pour un numéro long." };
-      return { icon: "📝", type: "Texte libre", fmt: "qr", why: "Le QR accepte n'importe quel texte." };
-    }
-    const IA_FMT_LABEL = { qr: "QR Code", barcode: "Code-barres", dm: "DataMatrix" };
-
-    // Pré-traitement image : contraste (+ netteté en 2e passe)
-    function iaPreprocess(srcCanvas, mode) {
-      const c = document.createElement("canvas");
-      const k = Math.min(2, Math.max(1, 1400 / (srcCanvas.width || 1)));
-      c.width = Math.max(1, Math.round(srcCanvas.width * k));
-      c.height = Math.max(1, Math.round(srcCanvas.height * k));
-      const ctx = c.getContext("2d");
-      ctx.imageSmoothingEnabled = true;
-      ctx.drawImage(srcCanvas, 0, 0, c.width, c.height);
-      const img = ctx.getImageData(0, 0, c.width, c.height);
-      const d = img.data;
-      let lo = 255, hi = 0;
-      for (let i = 0; i < d.length; i += 4) {
-        const g = 0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2];
-        d[i] = d[i + 1] = d[i + 2] = g;
-        if (g < lo) lo = g; if (g > hi) hi = g;
-      }
-      const range = Math.max(1, hi - lo);
-      for (let i = 0; i < d.length; i += 4) {
-        const g = Math.min(255, Math.max(0, (d[i] - lo) * 255 / range));
-        d[i] = d[i + 1] = d[i + 2] = g;
-      }
-      if (mode === "sharp") {
-        const w = c.width, h = c.height;
-        const copy = new Uint8ClampedArray(d);
-        for (let y = 1; y < h - 1; y++) for (let x = 1; x < w - 1; x++) {
-          const i = (y * w + x) * 4;
-          let blur = 0, n = 0;
-          for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) { blur += copy[((y + dy) * w + (x + dx)) * 4]; n++; }
-          blur /= n;
-          const v = copy[i] + 0.8 * (copy[i] - blur);
-          d[i] = d[i + 1] = d[i + 2] = Math.min(255, Math.max(0, v));
         }
+      } catch (e) {
+        out.innerHTML = "<p class='hint'>Erreur de génération.</p>";
       }
-      ctx.putImageData(img, 0, 0);
-      return c;
     }
 
-    async function iaDetectCodes(canvas) {
-      const out = [];
-      if (!("BarcodeDetector" in window)) return out;
-      try {
-        const det = new BarcodeDetector();
-        const codes = await det.detect(canvas);
-        (codes || []).forEach(cd => {
-          const v = String(cd.rawValue || "").trim();
-          if (v && !out.some(o => o.value === v)) out.push({ value: v, source: "code", format: cd.format || "" });
-        });
-      } catch (e) {}
-      return out;
-    }
-
-    async function iaOcrRead(canvas) {
-      if (typeof Tesseract === "undefined") return "";
-      try {
-        if (!iaWorker) {
-          try { iaWorker = await Tesseract.createWorker("eng+fra"); }
-          catch (e) { iaWorker = await Tesseract.createWorker("eng"); }
-        }
-        const r = await iaWorker.recognize(canvas.toDataURL("image/png"));
-        return String((r && r.data && r.data.text) || "");
-      } catch (e) { return ""; }
-    }
-
-    function iaExtractCandidates(text) {
-      const out = [];
-      const push = v => { v = String(v).replace(/\s+/g, ""); if (v.length >= 8 && !out.includes(v)) out.push(v); };
-      (String(text || "").match(/[A-Z]{2}\d{9}[A-Z]{2}/gi) || []).forEach(push);
-      (String(text || "").match(/1[A-Z]\s?\d{3}\s?\d{3}\s?\d{3}(\s?\d)?/gi) || []).forEach(push);
-      (String(text || "").match(/SD\s*:?\s*[0-9A-Z]{8,}/gi) || []).forEach(m => push(m.replace(/SD\s*:?\s*/i, "SD")));
-      (String(text || "").match(/1Z[0-9A-Z]{16}/gi) || []).forEach(push);
-      (String(text || "").match(/\b[0-9]{8,14}\b/g) || []).forEach(push);
-      return out.slice(0, 6);
-    }
-
-    function iaFileToImage(file, cb) {
-      const url = URL.createObjectURL(file);
-      const img = new Image();
-      img.onload = () => {
-        try {
-          const maxDim = 1600;
-          const k = Math.min(1, maxDim / Math.max(img.width, img.height));
-          const c = document.createElement("canvas");
-          c.width = Math.max(1, Math.round(img.width * k));
-          c.height = Math.max(1, Math.round(img.height * k));
-          c.getContext("2d").drawImage(img, 0, 0, c.width, c.height);
-          URL.revokeObjectURL(url);
-          cb(c);
-        } catch (e) { URL.revokeObjectURL(url); cb(null); }
+    document.querySelectorAll(".tabs button").forEach(b => {
+      b.onclick = () => {
+        document.querySelectorAll(".tabs button").forEach(x => x.classList.remove("active"));
+        b.classList.add("active");
+        currentType = b.dataset.type;
+        renderCode();
       };
-      img.onerror = () => { URL.revokeObjectURL(url); cb(null); };
-      img.src = url;
-    }
+    });
+    document.getElementById("bc-cycle").onclick = () => {
+      bcIndex = (bcIndex + 1) % BC_TYPES.length;
+      document.getElementById("bc-cycle").textContent = "🏷️ Type : " + BC_TYPES[bcIndex].label + " ▸";
+      renderCode();
+    };
+    document.getElementById("code-color").oninput = renderCode;
 
-    async function iaAnalyzeCanvas(base) {
-      let items = await iaDetectCodes(base);
-      const prep = iaPreprocess(base, "contrast");
-      (await iaDetectCodes(prep)).forEach(f => { if (!items.some(o => o.value === f.value)) items.push(f); });
-      let text = await iaOcrRead(prep);
-      let cands = iaExtractCandidates(text);
-      if (cands.length === 0) {
-        const sharp = iaPreprocess(base, "sharp");
-        cands = iaExtractCandidates(await iaOcrRead(sharp));
-      }
-      cands.forEach(v => { if (!items.some(o => o.value === v)) items.push({ value: v, source: "ocr", format: "" }); });
-      return items;
-    }
-
-    // Analyse transparente (photo sans code) : moteur interne direct
-    function iaDeepAnalyze(file, cb) {
-      if (iaBusy) { cb(null); return; }
-      iaBusy = true;
-      iaFileToImage(file, (c) => {
-        if (!c) { iaBusy = false; cb(null); return; }
-        iaAnalyzeCanvas(c).then((items) => { iaBusy = false; cb(items); })
-          .catch(() => { iaBusy = false; cb(null); });
-      });
-    }
-
-    function iaShowItems(items) {
-      document.getElementById("ocr-status").style.display = "none";
-      const cls = iaClassify(items[0].value);
-      showResult(items[0].value, cls.fmt);
-      const note = document.getElementById("repair-note");
-      note.textContent = "🤖 Trouvé par l'IA intégrée (analyse approfondie en arrière-plan) — résultat renvoyé automatiquement, format conseillé : " + IA_FMT_LABEL[cls.fmt] + "." + (items.length > 1 ? " " + items.length + " valeurs détectées, la meilleure est affichée, les autres sont dans l'historique." : "");
-      note.style.display = "block";
-      if (items.length > 1) items.slice(1).forEach((it) => { try { addToHistory(it.value); } catch (e) {} });
-    }
-
-    // ===== Carte « Analyse IA » : analyse manuelle avec résultats détaillés =====
-    function iaHandleFile(file) {
-      if (!file || !/^image\//.test(file.type)) { alert("Choisis une image (photo, capture…)."); return; }
-      const status = document.getElementById("ia-status");
-      status.textContent = "🔎 Analyse IA en cours (codes + texte imprimé)…";
-      status.style.display = "block";
-      iaFileToImage(file, (c) => {
-        if (!c) { status.textContent = "⚠️ Image illisible — réessaie avec une autre photo."; return; }
-        iaAnalyzeCanvas(c).then((items) => {
-          const zone = document.getElementById("ia-results");
-          zone.innerHTML = "";
-          if (!items.length) {
-            status.textContent = "ℹ️ Rien trouvé cette fois-ci. Essaie une photo plus proche, mieux éclairée, ou ouvre l'extension IA-G-scan.";
-            return;
-          }
-          status.textContent = "✅ " + items.length + " valeur" + (items.length > 1 ? "s" : "") + " détectée" + (items.length > 1 ? "s" : "") + " :";
-          items.forEach((it) => {
-            const cls = iaClassify(it.value);
-            const div = document.createElement("div");
-            div.style.cssText = "border:1px solid rgba(34,211,238,.3);border-radius:10px;padding:10px;margin:8px 0";
-            const head = document.createElement("div");
-            head.style.cssText = "font-weight:600;display:flex;align-items:center;gap:8px;flex-wrap:wrap";
-            const val = document.createElement("span");
-            val.textContent = it.value;
-            val.style.cssText = "font-family:ui-monospace,monospace;word-break:break-all";
-            const tag = document.createElement("span");
-            tag.textContent = cls.icon + " " + cls.type + (it.source === "ocr" ? " · lu par OCR" : "");
-            tag.style.cssText = "font-size:.72rem;background:rgba(34,211,238,.12);border-radius:6px;padding:2px 8px";
-            head.appendChild(val); head.appendChild(tag);
-            div.appendChild(head);
-            const why = document.createElement("div");
-            why.className = "hint";
-            why.textContent = "💡 " + cls.why + " Recommandé : " + IA_FMT_LABEL[cls.fmt] + ".";
-            div.appendChild(why);
-            const row = document.createElement("div");
-            row.style.marginTop = "6px";
-            const bCopy = document.createElement("button");
-            bCopy.className = "secondary"; bCopy.textContent = "📋 Copier";
-            bCopy.onclick = () => { navigator.clipboard.writeText(it.value).then(() => { bCopy.textContent = "✓ Copié"; }); };
-            const bRegen = document.createElement("button");
-            bRegen.className = "secondary"; bRegen.style.marginLeft = "6px";
-            bRegen.textContent = "✨ Régénérer (" + IA_FMT_LABEL[cls.fmt] + ")";
-            bRegen.onclick = () => {
-              showResult(it.value, cls.fmt);
-              document.getElementById("result-area").scrollIntoView({ behavior: "smooth" });
-            };
-            row.appendChild(bCopy); row.appendChild(bRegen);
-            div.appendChild(row);
-            zone.appendChild(div);
-          });
-        }).catch(() => { status.textContent = "⚠️ Analyse interrompue — réessaie."; });
-      });
-    }
-    (function () {
-      const drop = document.getElementById("ia-drop");
-      const input = document.getElementById("ia-file");
-      if (!drop || !input) return;
-      drop.onclick = () => input.click();
-      document.getElementById("ia-cam-btn").onclick = () => input.click();
-      input.onchange = (e) => { if (e.target.files[0]) iaHandleFile(e.target.files[0]); e.target.value = ""; };
-      ["dragenter", "dragover"].forEach(ev => drop.addEventListener(ev, (e) => { e.preventDefault(); drop.style.borderColor = "#22d3ee"; }));
-      ["dragleave", "drop"].forEach(ev => drop.addEventListener(ev, (e) => { e.preventDefault(); drop.style.borderColor = "rgba(168,85,247,.55)"; }));
-      drop.addEventListener("drop", (e) => { const f = e.dataTransfer.files[0]; if (f) iaHandleFile(f); });
-    })();
-
-        // ===== Binôme IA-G-scan : réception d'une valeur envoyée =====
-    (function () {
+    document.getElementById("copy-btn").onclick = async () => {
       try {
-        const raw = localStorage.getItem("gscan_handoff");
-        if (!raw) return;
-        const h = JSON.parse(raw);
-        if (!h || !h.value || Date.now() - (h.at || 0) > 5 * 60 * 1000) return;
-        localStorage.removeItem("gscan_handoff");
-        const t = document.getElementById("gen-input");
-        if (t) { t.value = h.value; t.dispatchEvent(new Event("input", { bubbles: true })); }
-        alert("U0001F916 IA-G-scan a envoyé :\n\n" + h.value + (t ? "\n\n✓ Prêt dans la zone de génération." : ""));
-      } catch (e) {}
-    })();
+        await navigator.clipboard.writeText(currentValue);
+        toast("📋 Copié !");
+      } catch (e) { toast("Impossible de copier"); }
+    };
+    document.getElementById("download-btn").onclick = () => {
+      const canvas = document.querySelector("#output canvas");
+      if (!canvas) return;
+      const a = document.createElement("a");
+      a.download = "g-scan-" + Date.now() + ".png";
+      a.href = canvas.toDataURL("image/png");
+      a.click();
+    };
+    document.getElementById("print-btn").onclick = () => {
+      const canvas = document.querySelector("#output canvas");
+      if (!canvas) return;
+      const w = window.open("");
+      w.document.write(`<img src="${canvas.toDataURL()}" style="max-width:100%">`);
+      w.document.close();
+      w.print();
+    };
+    document.getElementById("clear-btn").onclick = () => {
+      currentValue = "";
+      document.getElementById("result-area").style.display = "none";
+      document.getElementById("output").innerHTML = "";
+      document.getElementById("product-info").innerHTML = "";
+    };
 
-        // ===== ZOOM INTELLIGENT (corrigé) =====
+    document.getElementById("gen-qr").onclick = () => {
+      const v = document.getElementById("gen-input").value.trim();
+      if (!v) return toast("Entre un texte d'abord");
+      showResult(v, "qr");
+      showSection("sec-scan");
+    };
+    document.getElementById("gen-bc").onclick = () => {
+      const v = document.getElementById("gen-input").value.trim();
+      if (!v) return toast("Entre un texte d'abord");
+      showResult(v, "barcode");
+      showSection("sec-scan");
+    };
+    document.getElementById("gen-dm").onclick = () => {
+      const v = document.getElementById("gen-input").value.trim();
+      if (!v) return toast("Entre un texte d'abord");
+      showResult(v, "dm");
+      showSection("sec-scan");
+    };
+
+    // ===== ZOOM INTELLIGENT (calme) =====
+    // 3 paliers (large → moyen → serré), changement seulement toutes les 4 s,
+    // et FIGE 4,5 s dès qu'un code est suivi. Indicateur discret en toast.
     let zoomTrack = null;
     let zoomSteps = [];
     let zoomStepIdx = 0;
     let autoZoomTimer = null;
     let lastLensDetection = 0;
-    let lockedZoom = false;          // zoom figé quand un code est suivi
+    let lockedZoom = false;
+    let zoomHintShown = 0;
 
     function stopAutoZoom() {
-      if (autoZoomTimer) {
-        clearInterval(autoZoomTimer);
-        autoZoomTimer = null;
-      }
+      if (autoZoomTimer) { clearInterval(autoZoomTimer); autoZoomTimer = null; }
     }
 
     function applyZoomLevel(z) {
       if (!zoomTrack) return;
       zoomTrack.applyConstraints({ advanced: [{ zoom: z }] }).catch(() => {});
+    }
+
+    function zoomStatus(txt) {
+      const now = Date.now();
+      if (now - zoomHintShown < 1500) return; // anti-spam
+      zoomHintShown = now;
+      toast(txt, 1600);
     }
 
     function setupZoom(video) {
@@ -1159,600 +931,461 @@
       const track = video && video.srcObject ? video.srcObject.getVideoTracks()[0] : null;
       if (!track) return;
       zoomTrack = track;
-      // Haute résolution + mise au point continue (conservés de la V10)
+      // Haute résolution + mise au point continue (APRÈS démarrage : config start() = 1 clé)
       try { track.applyConstraints({ width: { ideal: 1920 }, height: { ideal: 1080 }, frameRate: { ideal: 30 } }).catch(() => {}); } catch (e) {}
       try { track.applyConstraints({ advanced: [{ focusMode: "continuous" }] }).catch(() => {}); } catch (e) {}
       let caps = {};
       try { caps = track.getCapabilities() || {}; } catch (e) {}
-      const hint = document.getElementById("zoom-hint");
       if (!caps.zoom || caps.zoom.max === undefined) {
-        if (hint) {
-          hint.textContent = "U0001F50D Zoom matériel non disponible — résolution maximale utilisée.";
-          hint.style.display = "block";
-        }
+        zoomStatus("🔍 Zoom matériel indisponible — résolution maximale");
         return;
       }
       const zmin = caps.zoom.min || 1;
       const zmax = caps.zoom.max || 1;
       const zmid = zmin + (zmax - zmin) * 0.45;
-      // 3 paliers : large → moyen → serré
       zoomSteps = [zmin, Math.min(zmid, zmax), zmax];
       zoomStepIdx = 0;
       applyZoomLevel(zoomSteps[0]);
-      if (hint) {
-        hint.textContent = "U0001F50D Zoom auto";
-        hint.style.display = "block";
-      }
-      // Zoom beaucoup plus calme
       autoZoomTimer = setInterval(() => {
-        // Si un code est suivi récemment → on fige le zoom
         if (Date.now() - lastLensDetection < 4500) {
-          if (!lockedZoom && hint) { hint.textContent = "U0001F512 Zoom figé — code repéré"; }
-          lockedZoom = true;
+          if (!lockedZoom) { lockedZoom = true; zoomStatus("🔒 Zoom figé — code repéré"); }
           return;
         }
-        // Sinon on change de niveau seulement toutes les 4 secondes
-        if (lockedZoom && hint) { hint.textContent = "U0001F50D Zoom auto"; }
-        lockedZoom = false;
+        if (lockedZoom) { lockedZoom = false; zoomStatus("🔍 Zoom auto"); }
         zoomStepIdx = (zoomStepIdx + 1) % zoomSteps.length;
         applyZoomLevel(zoomSteps[zoomStepIdx]);
       }, 4000);
     }
 
-    // (Les boutons Zoom + / − ont été remplacés par le zoom automatique.)
+    const FORMATS = [
+      Html5QrcodeSupportedFormats.QR_CODE,
+      Html5QrcodeSupportedFormats.EAN_13,
+      Html5QrcodeSupportedFormats.EAN_8,
+      Html5QrcodeSupportedFormats.UPC_A,
+      Html5QrcodeSupportedFormats.UPC_E,
+      Html5QrcodeSupportedFormats.CODE_39,
+      Html5QrcodeSupportedFormats.CODE_93,
+      Html5QrcodeSupportedFormats.CODE_128,
+      Html5QrcodeSupportedFormats.CODABAR,
+      Html5QrcodeSupportedFormats.ITF,
+      Html5QrcodeSupportedFormats.DATA_MATRIX,
+      Html5QrcodeSupportedFormats.AZTEC,
+      Html5QrcodeSupportedFormats.PDF_417
+    ].filter(Boolean);
 
-        // ===== OCR =====
-    document.getElementById("ocr-btn").onclick = () => ocrFromCamera();
-
-    // OCR texte libre : toute la photo devient texte copiable
-    let ocrFreeTextMode = false;
-    document.getElementById("ocr-free-btn").onclick = () => {
-      ocrFreeTextMode = true;
-      document.getElementById("photo-ocr-input").value = "";
-      document.getElementById("photo-ocr-input").click();
-    };
-
-    document.getElementById("photo-ocr-input").onchange = async (e) => {
-      const file = e.target.files[0];
-      if (!file) return;
-      const freeText = ocrFreeTextMode;
-      ocrFreeTextMode = false;
-      e.target.value = "";
+    document.getElementById("start-btn").onclick = async () => {
+      html5QrCode = new Html5Qrcode("reader");
       try {
-        showOcrProgress(freeText ? "Photo — OCR texte libre" : "Photo — analyse OCR");
-        await ocrFromPhoto(file, freeText);
-      } catch (err) {
-        document.getElementById("ocr-status").style.display = "none";
-        alert("La lecture de texte n'a pas fonctionné sur cette photo.\nEssaie une photo plus nette, plus proche, avec un bon éclairage.");
-      }
-    };
-
-    // ===== Generate =====
-    document.getElementById("gen-qr").onclick = () => {
-      const val = document.getElementById("gen-input").value.trim();
-      if (!val) return alert("Entre un texte");
-      showResult(val, "qr");
-    };
-
-    document.getElementById("gen-bc").onclick = () => {
-      const val = document.getElementById("gen-input").value.trim();
-      if (!val) return alert("Entre un texte");
-      showResult(val, "barcode");
-    };
-
-    document.getElementById("gen-dm").onclick = () => {
-      const val = document.getElementById("gen-input").value.trim();
-      if (!val) return alert("Entre un texte");
-      showResult(val, "dm");
-    };
-
-    // ===== Tabs =====
-    document.querySelectorAll(".tabs button").forEach(btn => {
-      btn.onclick = () => {
-        document.querySelectorAll(".tabs button").forEach(b => b.classList.remove("active"));
-        btn.classList.add("active");
-        currentType = btn.dataset.type;
-        document.getElementById("bc-cycle").style.display = (currentType === "barcode") ? "block" : "none";
-        renderCode();
-      };
-    });
-
-    // ===== Un seul bouton : cycle des types de codes-barres =====
-    function updateBcCycleBtn() {
-      const btn = document.getElementById("bc-cycle");
-      btn.textContent = "🏷️ Type : " + BC_TYPES[bcIndex].label + " ▸ (appuie pour changer)";
-      btn.style.display = (currentType === "barcode") ? "block" : "none";
-    }
-    document.getElementById("bc-cycle").onclick = () => {
-      bcIndex = (bcIndex + 1) % BC_TYPES.length;
-      updateBcCycleBtn();
-      renderCode();
-    };
-
-    document.getElementById("code-color").oninput = renderCode;
-
-    // ===== IA vision (Gemini) — « qu'est-ce que c'est ? » façon Google Lens =====
-    // Clé API gratuite sur aistudio.google.com (sans carte bancaire), collée dans ⚙️.
-    // La photo part chez Google pour l'analyse ; le scan de codes reste 100 % local.
-    const AI_MODELS = ["gemini-3.8-flash", "gemini-3.6-flash", "gemini-2.5-flash"]; // repli si un modèle est retiré
-    let aiBusy = false;
-    const aiKeyInput = document.getElementById("ai-key");
-    aiKeyInput.value = localStorage.getItem("gscan-ai-key") || "";
-    aiKeyInput.oninput = () => localStorage.setItem("gscan-ai-key", aiKeyInput.value.trim());
-
-    document.getElementById("ai-key-btn").onclick = () => {
-      const show = aiKeyInput.style.display === "none";
-      aiKeyInput.style.display = show ? "block" : "none";
-      document.getElementById("ai-question").style.display = show ? "block" : "none";
-      document.getElementById("ai-privacy").style.display = show ? "block" : "none";
-    };
-
-    async function aiAnalyze(dataUrl, question) {
-      const key = (localStorage.getItem("gscan-ai-key") || "").trim();
-      if (!key) {
-        alert("🤖 Pour l'identification IA, il faut une clé Gemini gratuite (2 minutes, sans carte bancaire) :\n\n1. Ouvre https://aistudio.google.com avec ton compte Google\n2. Clique « Get API key » puis « Create API key »\n3. Copie la clé et colle-la dans ⚙️ Clé IA Gemini\n\nEnsuite le bouton 🤖 fonctionne.");
-        document.getElementById("ai-key-btn").click();
-        return;
-      }
-      if (aiBusy) return;
-      aiBusy = true;
-      const st = document.getElementById("ocr-status");
-      st.style.display = "block";
-      st.textContent = "🤖 Analyse IA en cours... (quelques secondes)";
-      const b64 = String(dataUrl).split(",")[1] || "";
-      const prompt =
-        "Tu es un assistant dans une application de scan. Analyse cette photo et réponds en français, de façon claire et structurée : " +
-        "1) Décris l'objet principal (type, marque, produit si reconnaissable). " +
-        "2) Lis et transcris TOUTES les étiquettes visibles : codes-barres et leurs chiffres, QR codes, DataMatrix, numéros de série, date de péremption, adresse. " +
-        "3) Si c'est un colis ou un courrier : indique le transporteur probable (La Poste, Chronopost, Colissimo, UPS, DHL, Colis Privé, Mondial Relay, FedEx, DPD, GLS...) et le numéro de suivi complet. " +
-        "4) Donne un conseil utile (ex. où jeter l'emballage, que faire du colis)." +
-        (question ? "\n\nQuestion de l'utilisateur : " + question : "");
-      const body = {
-        contents: [{ parts: [{ text: prompt }, { inline_data: { mime_type: "image/jpeg", data: b64 } }] }],
-        generationConfig: { temperature: 0.1, maxOutputTokens: 1024 }
-      };
-      try {
-        let text = null, lastErr = "";
-        for (const model of AI_MODELS) {
-          try {
-            const r = await fetch("https://generativelanguage.googleapis.com/v1beta/models/" + model + ":generateContent?key=" + encodeURIComponent(key), {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify(body)
-            });
-            if (r.status === 404) { lastErr = "modèle " + model + " indisponible"; continue; }
-            const j = await r.json();
-            if (!r.ok) throw new Error((j.error && j.error.message) || ("HTTP " + r.status));
-            const parts = j.candidates && j.candidates[0] && j.candidates[0].content && j.candidates[0].content.parts;
-            text = (parts || []).map(p => p.text || "").join("").trim();
-            if (text) break;
-            lastErr = "réponse vide du modèle";
-          } catch (e) { lastErr = String(e && e.message || e); }
-        }
-        if (!text) throw new Error(lastErr || "réponse vide");
-        const ans = document.getElementById("ai-answer");
-        ans.style.display = "block";
-        ans.innerHTML = "";
-        const pre = document.createElement("div");
-        pre.style.cssText = "white-space:pre-wrap;background:rgba(255,255,255,0.05);border:1px solid var(--border);border-radius:12px;padding:12px;margin-top:8px;font-size:0.95rem;line-height:1.5";
-        pre.textContent = "🤖 " + text;
-        ans.appendChild(pre);
-        const cp = document.createElement("button");
-        cp.className = "secondary";
-        cp.textContent = "📋 Copier la réponse de l'IA";
-        cp.onclick = () => copyText(text);
-        ans.appendChild(cp);
-        st.style.display = "none";
+        await html5QrCode.start(
+          { facingMode: "environment" },
+          { fps: 12, formatsToSupport: FORMATS },
+          (decoded) => {
+            if (navigator.vibrate) navigator.vibrate(120);
+            stopAutoZoom();
+            showResult(decoded);
+            if (!continuousMode) {
+              stopCamera();
+            } else {
+              toast("✅ " + decoded.slice(0, 40) + (decoded.length > 40 ? "…" : ""), 1800);
+            }
+          }
+        );
+        document.getElementById("reader-wrap").style.display = "block";
+        document.getElementById("start-btn").style.display = "none";
+        document.getElementById("stop-btn").style.display = "block";
+        document.getElementById("scan-options").style.display = "flex";
+        const video = document.querySelector("#reader video");
+        if (video && video.srcObject) torchTrack = video.srcObject.getVideoTracks()[0] || null;
+        updateFlash();
+        setupZoom(video);
+        lensStart(video);
       } catch (err) {
         const msg = String(err && err.message || err);
-        alert("🤖 L'analyse IA n'a pas abouti.\n\nVérifie ta clé (⚙️ Clé IA Gemini) et ta connexion internet.\n\n(Détail : " + msg + ")");
-      } finally {
-        aiBusy = false;
+        if (/permission|denied|NotAllowed/i.test(msg)) {
+          alert("📷 Caméra bloquée.\n\nAutorise la caméra dans les paramètres du navigateur, puis recharge.");
+        } else {
+          alert("📷 Impossible de démarrer la caméra.\nUtilise le mode Photo.\n\n" + msg);
+        }
       }
+    };
+
+    function stopCamera() {
+      if (html5QrCode) {
+        html5QrCode.stop().catch(() => {});
+        html5QrCode = null;
+      }
+      lensStop();
+      stopAutoZoom();
+      zoomTrack = null;
+      document.getElementById("reader-wrap").style.display = "none";
+      document.getElementById("start-btn").style.display = "block";
+      document.getElementById("stop-btn").style.display = "none";
+      document.getElementById("scan-options").style.display = "none";
+      torchTrack = null;
+    }
+    document.getElementById("stop-btn").onclick = stopCamera;
+
+    function updateFlash() {
+      const btn = document.getElementById("flash-btn");
+      if (!torchTrack) { btn.style.display = "none"; return; }
+      btn.style.display = "inline-flex";
+    }
+    document.getElementById("flash-btn").onclick = () => {
+      if (!torchTrack) return;
+      try {
+        const caps = torchTrack.getCapabilities && torchTrack.getCapabilities();
+        if (caps && caps.torch) {
+          const on = !(torchTrack.getConstraints().advanced && torchTrack.getConstraints().advanced[0] && torchTrack.getConstraints().advanced[0].torch);
+          torchTrack.applyConstraints({ advanced: [{ torch: on }] });
+          toast(on ? "Flash allumé" : "Flash éteint");
+        }
+      } catch(e) {}
+    };
+    document.getElementById("fullscreen-btn").onclick = () => {
+      const el = document.getElementById("reader-wrap");
+      if (!document.fullscreenElement) el.requestFullscreen?.().catch(() => {});
+      else document.exitFullscreen?.();
+    };
+
+    function lensStart(video) {
+      if (!("BarcodeDetector" in window)) return;
+      try {
+        lensDetector = new BarcodeDetector({ formats: LENS_FORMATS });
+      } catch(e) { return; }
+      const canvas = document.getElementById("lens-overlay");
+      const ctx = canvas.getContext("2d");
+      function loop() {
+        if (!video || video.readyState < 2) { lensRAF = requestAnimationFrame(loop); return; }
+        canvas.width = video.videoWidth;
+        canvas.height = video.videoHeight;
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        lensDetector.detect(video).then(codes => {
+          if (codes && codes.length) lastLensDetection = Date.now(); // code suivi → zoom figé
+          codes.forEach(c => {
+            const box = c.boundingBox;
+            const val = String(c.rawValue || "");
+            let badge = "";
+            if (/^[A-Z]{2}\d{9}[A-Z]{2}$/i.test(val)) badge = " 📮 suivi";
+            else if (/^SD\d{6,}/i.test(val) || /^SMARD/i.test(val)) badge = " 🔗 Smart Data";
+            else if (/^https?:\/\//i.test(val)) badge = " 🌐 lien";
+            else if (/^\d{8}$|^\d{12,14}$/.test(val)) badge = " 📦 produit";
+            ctx.strokeStyle = "#22d3ee";
+            ctx.lineWidth = 3;
+            ctx.strokeRect(box.x, box.y, box.width, box.height);
+            ctx.fillStyle = "rgba(34,211,238,0.85)";
+            ctx.font = "bold 14px system-ui";
+            ctx.fillText((c.format || "") + " · " + val.slice(0, 24) + badge, box.x, box.y - 6);
+          });
+        }).catch(() => {});
+        lensRAF = requestAnimationFrame(loop);
+      }
+      loop();
+    }
+    function lensStop() {
+      if (lensRAF) cancelAnimationFrame(lensRAF);
+      lensRAF = null;
+      const canvas = document.getElementById("lens-overlay");
+      if (canvas) canvas.getContext("2d").clearRect(0,0,canvas.width,canvas.height);
     }
 
-    document.getElementById("ai-btn").onclick = () => {
-      // Caméra allumée ? -> on analyse l'image en direct ; sinon photo au choix
-      if (document.getElementById("stop-btn").style.display !== "none") {
-        const video = document.querySelector("#reader video");
-        if (video && video.videoWidth) {
+    const drop = document.getElementById("drop-zone");
+    drop.onclick = () => document.getElementById("photo-input").click();
+    drop.ondragover = e => { e.preventDefault(); drop.classList.add("over"); };
+    drop.ondragleave = () => drop.classList.remove("over");
+    drop.ondrop = e => {
+      e.preventDefault();
+      drop.classList.remove("over");
+      if (e.dataTransfer.files[0]) handlePhoto(e.dataTransfer.files[0]);
+    };
+    document.getElementById("photo-input").onchange = e => {
+      if (e.target.files[0]) handlePhoto(e.target.files[0]);
+      e.target.value = ""; // permet de reprendre la MÊME photo deux fois
+    };
+    document.getElementById("photo-cam-btn").onclick = () => document.getElementById("photo-input").click();
+
+    async function handlePhoto(file) {
+      if (!file || !file.type.startsWith("image/")) return;
+      document.getElementById("ocr-status").style.display = "block";
+      document.getElementById("ocr-status").textContent = "⏳ Analyse approfondie en cours…";
+      toast("Analyse locale…");
+
+      const url = URL.createObjectURL(file);
+      const img = new Image();
+      img.onload = async () => {
+        try {
+          const maxDim = 1600;
+          const k = Math.min(1, maxDim / Math.max(img.width, img.height));
           const c = document.createElement("canvas");
-          c.width = video.videoWidth; c.height = video.videoHeight;
-          c.getContext("2d").drawImage(video, 0, 0);
-          aiAnalyze(c.toDataURL("image/jpeg", 0.85), document.getElementById("ai-question").value.trim());
-          return;
-        }
-      }
-      document.getElementById("ai-photo-input").value = "";
-      document.getElementById("ai-photo-input").click();
-    };
-    document.getElementById("ai-photo-input").onchange = (e) => {
-      const file = e.target.files[0];
-      if (!file) return;
-      e.target.value = "";
-      const fr = new FileReader();
-      fr.onload = () => aiAnalyze(fr.result, document.getElementById("ai-question").value.trim());
-      fr.readAsDataURL(file);
-    };
+          c.width = Math.max(1, Math.round(img.width * k));
+          c.height = Math.max(1, Math.round(img.height * k));
+          c.getContext("2d").drawImage(img, 0, 0, c.width, c.height);
+          URL.revokeObjectURL(url);
 
-    // ===== Show Result =====
-    function showResult(value, forceType = null) {
-      const rep = repairValue(value);
-      currentValue = rep.value;
-      const note = document.getElementById("repair-note");
-      if (rep.note) { note.textContent = rep.note; note.style.display = "block"; }
-      else note.style.display = "none";
-      if (forceType) currentType = forceType;
-      document.getElementById("result-value").textContent = value;
-      document.getElementById("result-area").style.display = "block";
-      updateContentInfo(value);
-      addToHistory(value);
-      renderCode();
+          const items = await deepAnalyze(c);
+          document.getElementById("ocr-status").style.display = "none";
+          if (items && items.length) {
+            showResult(items[0].value);
+            toast(items.length > 1 ? `✅ ${items.length} codes trouvés` : "✅ Code trouvé");
+          } else {
+            const text = await ocrRead(c);
+            const cands = extractCandidates(text);
+            if (cands.length) {
+              showResult(cands[0]);
+              toast("✅ Texte / suivi trouvé via OCR");
+            } else {
+              alert("Aucun code ni texte exploitable trouvé.\nEssaie une photo plus nette et bien éclairée.");
+            }
+          }
+        } catch (e) {
+          document.getElementById("ocr-status").style.display = "none";
+          alert("Erreur d'analyse : " + e.message);
+        }
+      };
+      img.onerror = () => { URL.revokeObjectURL(url); alert("Impossible de lire l'image"); };
+      img.src = url;
     }
 
-    // ===== Transporteurs : UPS, DHL, FedEx, Colis Privé, Mondial Relay... =====
-    // Certains numéros sont ambigus (ex. 12 chiffres = produit OU FedEx) : les boutons
-    // transporteur sont alors ajoutés EN PLUS des boutons produit, à toi de choisir.
-    const CARRIERS = [
-      { name: "UPS", re: /^1Z[0-9A-Z]{16}$/, url: (v) => "https://www.ups.com/track?tracknum=" + encodeURIComponent(v) },
-      { name: "DHL", re: /^JD[0-9]{8,24}$/i, url: (v) => "https://www.dhl.com/fr-en/home/tracking.html?tracking-id=" + encodeURIComponent(v) },
-      { name: "DHL Express", re: /^\d{10}$/, url: (v) => "https://www.dhl.com/fr-en/home/tracking.html?tracking-id=" + encodeURIComponent(v) },
-      { name: "FedEx", re: /^\d{12}$/, url: (v) => "https://www.fedex.com/fedextrack/?trknbr=" + encodeURIComponent(v) },
-      { name: "Mondial Relay", re: /^\d{15}$/, url: (v) => "https://www.parcelsapp.com/fr/tracking/" + encodeURIComponent(v) },
-      { name: "Mondial Relay", re: /^\d{8}$/, url: (v) => "https://www.parcelsapp.com/fr/tracking/" + encodeURIComponent(v) }
-    ];
-    // Vrai numéro de livre ? (ISBN-10/13 avec clé de contrôle valide — sinon un
-    // numéro à 10 chiffres est probablement un colis DHL Express, pas un livre)
-    function isbnValid(s) {
-      const t = String(s).replace(/[- ]/g, "");
-      if (/^97[89]\d{10}$/.test(t)) {
-        let sum = 0;
-        for (let i = 0; i < 13; i++) sum += Number(t[i]) * (i % 2 === 0 ? 1 : 3);
-        return sum % 10 === 0;
-      }
-      if (/^\d{9}[\dXx]$/.test(t)) {
-        let sum = 0;
-        for (let i = 0; i < 10; i++) {
-          const c = (t[i] === "X" || t[i] === "x") ? 10 : Number(t[i]);
-          sum += c * (10 - i);
+    async function deepAnalyze(canvas) {
+      // Passe 1 : image brute + contrastée
+      let items = await detectCodes(canvas);
+      const prep = preprocess(canvas, "contrast");
+      (await detectCodes(prep)).forEach(f => {
+        if (!items.some(o => o.value === f.value)) items.push(f);
+      });
+      if (items.length) return items;
+      // Passe 2 : netteté renforcée (unsharp)
+      const sharp = preprocess(canvas, "sharp");
+      (await detectCodes(sharp)).forEach(f => {
+        if (!items.some(o => o.value === f.value)) items.push(f);
+      });
+      // Passe 3 : OCR texte imprimé — image entière puis zones zoomées
+      // (chiffres souvent petits SOUS le code : moitié basse, puis bords)
+      let cands = extractCandidates(await ocrRead(prep));
+      if (!cands.length) {
+        const zones = [
+          { x: 0, y: 0.45, w: 1, h: 0.55 },  // moitié basse (chiffres sous le code)
+          { x: 0, y: 0, w: 0.5, h: 1 },      // moitié gauche (timbres, étiquettes)
+          { x: 0.5, y: 0, w: 0.5, h: 1 }     // moitié droite
+        ];
+        for (const z of zones) {
+          const zw = Math.round(canvas.width * z.w), zh = Math.round(canvas.height * z.h);
+          const zx = Math.round(canvas.width * z.x), zy = Math.round(canvas.height * z.y);
+          const zc = document.createElement("canvas");
+          const k = Math.min(4, Math.max(2, 1400 / Math.max(zw, zh)));
+          zc.width = Math.round(zw * k); zc.height = Math.round(zh * k);
+          const zctx = zc.getContext("2d");
+          zctx.drawImage(canvas, zx, zy, zw, zh, 0, 0, zc.width, zc.height);
+          cands = extractCandidates(await ocrRead(preprocess(zc, "contrast")));
+          if (cands.length) break;
         }
-        return sum % 11 === 0;
       }
-      return false;
+      cands.forEach(v => { if (!items.some(o => o.value === v)) items.push({ value: v, format: "", source: "ocr" }); });
+      return items;
     }
 
-    function carrierButtons(v) {
+    function preprocess(src, mode) {
+      const c = document.createElement("canvas");
+      c.width = src.width; c.height = src.height;
+      const ctx = c.getContext("2d");
+      ctx.drawImage(src, 0, 0);
+      const id = ctx.getImageData(0, 0, c.width, c.height);
+      const d = id.data;
+      if (mode === "contrast") {
+        for (let i = 0; i < d.length; i += 4) {
+          const g = 0.299*d[i] + 0.587*d[i+1] + 0.114*d[i+2];
+          const v = g < 128 ? Math.max(0, g - 40) : Math.min(255, g + 40);
+          d[i] = d[i+1] = d[i+2] = v;
+        }
+      }
+      if (mode === "sharp") {
+        const w = c.width, h = c.height;
+        const copy = new Uint8ClampedArray(d);
+        for (let y = 1; y < h - 1; y++) for (let x = 1; x < w - 1; x++) {
+          const i = (y * w + x) * 4;
+          let blur = 0, n = 0;
+          for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
+            blur += copy[((y + dy) * w + (x + dx)) * 4]; n++;
+          }
+          blur /= n;
+          const v = copy[i] + 0.8 * (copy[i] - blur);
+          d[i] = d[i+1] = d[i+2] = Math.min(255, Math.max(0, v));
+        }
+      }
+      ctx.putImageData(id, 0, 0);
+      return c;
+    }
+
+    async function detectCodes(canvas) {
       const out = [];
-      for (const c of CARRIERS) {
-        if (c.re.test(v)) out.push({ label: "📮 Suivre sur " + c.name, url: c.url(v) });
-      }
-      // Aucun transporteur identifié mais ça ressemble à un numéro de colis ->
-      // bouton universel (détecte tout seul le transporteur)
-      if (!out.length && /^[0-9A-Z][0-9A-Z ]{8,24}$/.test(v) && /\d{8,}/.test(v.replace(/ /g, ""))) {
-        out.push({ label: "📮 Suivre ce colis (tous transporteurs)", url: "https://www.parcelsapp.com/fr/tracking/" + encodeURIComponent(v) });
+      if ("BarcodeDetector" in window) {
+        try {
+          const det = new BarcodeDetector({ formats: LENS_FORMATS });
+          const codes = await det.detect(canvas);
+          codes.forEach(c => {
+            if (c.rawValue) out.push({ value: c.rawValue, format: c.format || "", source: "detector" });
+          });
+        } catch(e) {}
       }
       return out;
     }
 
-    // ===== Détection du contenu : URL, prix produit, suivi postal, Wi-Fi =====
-    function updateContentInfo(value) {
-      const info = document.getElementById("content-info");
-      const actions = document.getElementById("content-actions");
-      info.style.display = "none";
-      actions.innerHTML = "";
-      document.getElementById("product-info").innerHTML = "";
-      const v = String(value).trim();
-
-      const addBtn = (label, url) => {
-        const b = document.createElement("button");
-        b.className = "secondary";
-        b.textContent = label;
-        b.onclick = () => window.open(url, "_blank", "noopener");
-        actions.appendChild(b);
-        return b;
-      };
-      const showInfo = (t) => { info.textContent = t; info.style.display = "block"; };
-      const addCarrierButtons = () => { for (const c of carrierButtons(v)) addBtn(c.label, c.url); };
-
-      if (/^1Z[0-9A-Z]{16}$/.test(v) || /^JD[0-9]{8,24}$/i.test(v)) {
-        showInfo("📦 Numéro de colis détecté — " + (/^1Z/.test(v) ? "UPS" : "DHL"));
-        addCarrierButtons();
-      }
-      else if (/^https?:\/\//i.test(v)) {
-        showInfo("🌐 Adresse web (URL) détectée");
-        addBtn("🌐 Ouvrir le lien", v);
-      }
-      else if (/^WIFI:/i.test(v)) {
-        const ssid = (v.match(/S:([^;]*)/i) || [])[1] || "";
-        showInfo("📶 Réseau Wi-Fi détecté : " + ssid);
-        const b = addBtn("📋 Copier le mot de passe Wi-Fi", "#");
-        b.onclick = async () => {
-          const pass = (v.match(/P:([^;]*)/i) || [])[1] || "";
-          copyText(pass || "(pas de mot de passe dans le QR)");
-        };
-      }
-      else if (/^[A-Z]{2}\d{9}[A-Z]{2}$/i.test(v)) {
-        showInfo("📮 Numéro de suivi de colis détecté");
-        addBtn("📮 Suivre ce colis", "https://www.laposte.fr/outils/suivre-vos-envois?code=" + encodeURIComponent(v));
-      }
-      else if (/^\d[A-Z]\s?\d{3}\s?\d{3}\s?\d{3}$/i.test(v)) {
-        showInfo("🚚 Numéro Chronopost/DPD détecté");
-        addBtn("🚚 Suivre ce colis", "https://www.chronopost.fr/fr/suivi?keyword=" + encodeURIComponent(v));
-      }
-      else if (/^(97[89]\d{10}|\d{9}[\dXx])$/.test(v.replace(/[- ]/g, "")) && isbnValid(v)) {
-        showInfo("📚 Numéro ISBN (livre) détecté");
-        const isbn = v.replace(/[- ]/g, "");
-        addBtn("🛒 Chercher le livre au meilleur prix", "https://www.google.com/search?tbm=shop&q=" + encodeURIComponent(isbn));
-        addBtn("🔎 Recherche générale", "https://www.google.com/search?q=" + encodeURIComponent(isbn));
-        loadBookInfo(isbn);
-      }
-      else if (/^\d{8}$|^\d{12,14}$/.test(v)) {
-        showInfo("📦 Code produit détecté — recherche des infos produit...");
-        addBtn("🛒 Chercher le moins cher", "https://www.google.com/search?tbm=shop&q=" + encodeURIComponent(v));
-        addBtn("🔎 Recherche générale", "https://www.google.com/search?q=" + encodeURIComponent(v));
-        loadProductInfo(v);
-        // Ambiguïté possible : 12 chiffres = colis FedEx, 8 chiffres = colis Mondial Relay
-        addCarrierButtons();
-      }
-      else if (/^\d{10}$/.test(v)) {
-        showInfo("🔢 Numéro à 10 chiffres — possiblement un colis DHL Express");
-        addCarrierButtons();
-        addBtn("🔎 Recherche générale", "https://www.google.com/search?q=" + encodeURIComponent(v));
-      }
-      else if (/^\d{15}$/.test(v)) {
-        showInfo("📦 Numéro à 15 chiffres — possiblement un colis Mondial Relay");
-        addCarrierButtons();
-        addBtn("🔎 Recherche générale", "https://www.google.com/search?q=" + encodeURIComponent(v));
-      }
-      else if (/^mailto:/i.test(v)) addBtn("✉️ Écrire un email", v);
-      else if (/^tel:/i.test(v)) addBtn("📞 Appeler", v);
-      else if (/^SD\d{6,}/i.test(v)) {
-        showInfo("🔗 Identifiant Smart Data détecté");
-        addBtn("🔎 Chercher ce code sur Google", "https://www.google.com/search?q=" + encodeURIComponent(v));
-      }
-      else {
-        addBtn("🔎 Chercher sur Google", "https://www.google.com/search?q=" + encodeURIComponent(v));
-        addCarrierButtons();
-      }
+    async function ocrRead(canvas) {
+      if (typeof Tesseract === "undefined") return "";
+      if (!ocrWorker) ocrWorker = await Tesseract.createWorker("eng+fra");
+      const { data } = await ocrWorker.recognize(canvas);
+      return data.text || "";
     }
 
-    // ===== Infos produit : bases libres Open Food Facts (alimentaire),
-    // Open Beauty Facts (soins, bougies, ménager), Open Products Facts (le reste) =====
-    const esc = (s) => String(s || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
-    const SCORE_COLORS = { a: "#038141", b: "#85bb2f", c: "#fecb02", d: "#ee8100", e: "#e63e09", unknown: "#9ca3af" };
-
-    function scoreChip(letter, legend) {
-      const c = SCORE_COLORS[String(letter || "").toLowerCase()] || SCORE_COLORS.unknown;
-      return "<span style='display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;border-radius:7px;background:" + c + ";color:#fff;font-weight:800;font-size:15px;margin-right:5px'>" + esc((letter || "?").toUpperCase()) + "</span>" +
-        "<span style='font-size:12px;color:#c4b5fd;margin-right:12px'>" + esc(legend) + "</span>";
+    function extractCandidates(text) {
+      const out = [];
+      const push = v => { v = String(v).replace(/\s+/g, ""); if (v && v.length >= 8 && !out.includes(v)) out.push(v); };
+      (String(text||"").match(/[A-Z]{2}\s?\d{9}\s?[A-Z]{2}/gi) || []).forEach(push);   // suivi postal RR123456789FR
+      (String(text||"").match(/1[A-Z]\s?\d{3}\s?\d{3}\s?\d{3}(\s?\d)?/gi) || []).forEach(push); // Chronopost 1A 123 456 789 0
+      (String(text||"").match(/SD\s*:?\s*[0-9A-Z]{8,}/gi) || []).forEach(m => push(m.replace(/SD\s*:?\s*/i, "SD")));
+      (String(text||"").match(/1Z[0-9A-Z]{16}/gi) || []).forEach(push);          // UPS
+      (String(text||"").match(/\b[0-9]{8,14}\b/g) || []).forEach(push);         // numéros
+      return out.slice(0, 8);
     }
 
-    async function loadProductInfo(barcode) {
-      const zone = document.getElementById("product-info");
-      zone.innerHTML = "<p class='hint'>⏳ Recherche des infos produit sur les bases libres...</p>";
-      const sources = [
-        { url: "https://world.openfoodfacts.org/api/v2/product/" + barcode + ".json", label: "Open Food Facts (alimentaire)" },
-        { url: "https://world.openbeautyfacts.org/api/v2/product/" + barcode + ".json", label: "Open Beauty Facts (soins, bougies, ménager)" },
-        { url: "https://world.openproductsfacts.org/api/v2/product/" + barcode + ".json", label: "Open Products Facts (tous produits)" }
-      ];
-      for (const src of sources) {
-        try {
-          const r = await fetch(src.url);
-          if (!r.ok) continue;
-          const j = await r.json();
-          if (j && j.status === 1 && j.product) { renderProductCard(j.product, src.label, barcode); return; }
-        } catch (e) { /* réseau indisponible -> source suivante */ }
+    document.getElementById("ocr-btn").onclick = () => {
+      const video = document.querySelector("#reader video");
+      if (video && video.readyState >= 2) {
+        const c = document.createElement("canvas");
+        c.width = video.videoWidth; c.height = video.videoHeight;
+        c.getContext("2d").drawImage(video, 0, 0);
+        document.getElementById("ocr-status").style.display = "block";
+        document.getElementById("ocr-status").textContent = "⏳ OCR…";
+        ocrRead(c).then(text => {
+          document.getElementById("ocr-status").style.display = "none";
+          const cands = extractCandidates(text);
+          if (cands.length) showResult(cands[0]);
+          else if (text.trim().length > 3) showResult(text.trim().slice(0, 200));
+          else alert("Aucun texte détecté");
+        });
+      } else {
+        document.getElementById("photo-ocr-input").click();
       }
-      zone.innerHTML = "<p class='hint'>ℹ️ Produit inconnu dans les bases libres. Utilise les boutons de prix et de recherche ci-dessus.</p>";
-    }
-
-    function renderProductCard(p, source, barcode) {
-      const zone = document.getElementById("product-info");
-      const img = p.image_front_small_url || p.image_url || "";
-      let chips = "";
-      if (p.nutriscore_grade) chips += scoreChip(p.nutriscore_grade, "Nutri-Score");
-      if (p.ecoscore_grade) chips += scoreChip(p.ecoscore_grade, "Éco-Score");
-      if (p.nova_group) chips += "<span style='display:inline-flex;align-items:center;height:28px;padding:0 10px;border-radius:7px;background:#7c3aed;color:#fff;font-weight:700;font-size:13px;margin-right:12px'>NOVA " + esc(p.nova_group) + "</span>";
-      if (!chips) chips = "<span style='font-size:12px;color:#9ca3af'>Pas de score disponible pour ce produit</span>";
-      const cats = p.categories ? String(p.categories).split(",")[0] : "";
-      const categ = p.categories_tags && p.categories_tags.length ? String(p.categories_tags[p.categories_tags.length - 1]).split(":")[1].replace(/-/g, " ") : cats;
-      zone.innerHTML =
-        "<div style='display:flex;gap:12px;margin-top:12px;padding:12px;border:1px solid rgba(168,85,247,0.35);border-radius:12px;background:rgba(255,255,255,0.04);align-items:flex-start'>" +
-        (img ? "<img src='" + esc(img) + "' alt='' style='width:64px;height:64px;object-fit:contain;border-radius:8px;background:#fff;flex-shrink:0'>" : "") +
-        "<div style='flex:1;min-width:0'>" +
-        "<div style='font-weight:700;color:#ede9fe;word-break:break-word'>" + esc(p.product_name || "(nom inconnu)") + "</div>" +
-        (p.brands ? "<div style='color:#a78bfa;font-size:13px;margin-top:2px'>🏷️ " + esc(p.brands) + "</div>" : "") +
-        (p.quantity ? "<div style='color:#9ca3af;font-size:12px;margin-top:2px'>⚖️ " + esc(p.quantity) + "</div>" : "") +
-        (categ ? "<div style='color:#9ca3af;font-size:12px;margin-top:2px'>📦 " + esc(categ) + "</div>" : "") +
-        "<div style='margin-top:8px;display:flex;flex-wrap:wrap;align-items:center'>" + chips + "</div>" +
-        "<div style='color:#6b7280;font-size:11px;margin-top:8px'>Source : " + esc(source) + " · " + esc(barcode) + "</div>" +
-        "</div></div>";
-    }
-
-    // ===== Infos livre (Google Books) =====
-    async function loadBookInfo(isbn) {
-      const zone = document.getElementById("product-info");
-      zone.innerHTML = "<p class='hint'>⏳ Recherche du livre sur Google Books...</p>";
-      try {
-        const r = await fetch("https://www.googleapis.com/books/v1/volumes?q=isbn:" + isbn);
-        const j = await r.json();
-        const it = j && j.items && j.items[0] && j.items[0].volumeInfo;
-        if (it) {
-          const img = (it.imageLinks && (it.imageLinks.thumbnail || it.imageLinks.smallThumbnail)) || "";
-          zone.innerHTML =
-            "<div style='display:flex;gap:12px;margin-top:12px;padding:12px;border:1px solid rgba(168,85,247,0.35);border-radius:12px;background:rgba(255,255,255,0.04);align-items:flex-start'>" +
-            (img ? "<img src='" + esc(img) + "' alt='' style='width:64px;height:96px;object-fit:contain;border-radius:8px;background:#fff;flex-shrink:0'>" : "") +
-            "<div style='flex:1;min-width:0'>" +
-            "<div style='font-weight:700;color:#ede9fe'>📖 " + esc(it.title || "(titre inconnu)") + "</div>" +
-            (it.authors ? "<div style='color:#a78bfa;font-size:13px;margin-top:2px'>✍️ " + esc(it.authors.join(", ")) + "</div>" : "") +
-            (it.publisher ? "<div style='color:#9ca3af;font-size:12px;margin-top:2px'>🏢 " + esc(it.publisher) + "</div>" : "") +
-            (it.publishedDate ? "<div style='color:#9ca3af;font-size:12px;margin-top:2px'>📅 " + esc(it.publishedDate) + "</div>" : "") +
-            (it.pageCount ? "<div style='color:#9ca3af;font-size:12px;margin-top:2px'>📄 " + esc(it.pageCount) + " pages</div>" : "") +
-            "<div style='color:#6b7280;font-size:11px;margin-top:8px'>Source : Google Books · " + esc(isbn) + "</div>" +
-            "</div></div>";
-          return;
-        }
-      } catch (e) { /* réseau indisponible */ }
-      zone.innerHTML = "<p class='hint'>ℹ️ Livre introuvable sur Google Books — utilise les boutons de prix ci-dessus.</p>";
-    }
-
-    // ===== Copier =====
-    async function copyText(txt) {
-      try {
-        await navigator.clipboard.writeText(txt);
-        const b = document.getElementById("copy-btn");
-        const old = b.textContent;
-        b.textContent = "✅ Copié !";
-        setTimeout(() => { b.textContent = old; }, 1500);
-      } catch (e) {
-        const ta = document.createElement("textarea");
-        ta.value = txt;
-        document.body.appendChild(ta);
-        ta.select();
-        document.execCommand("copy");
-        document.body.removeChild(ta);
-      }
-    }
-    document.getElementById("copy-btn").onclick = () => {
-      if (!currentValue) return alert("Rien à copier pour le moment — scanne ou génère d'abord un code.");
-      copyText(currentValue);
+    };
+    document.getElementById("ocr-free-btn").onclick = () => document.getElementById("photo-ocr-input").click();
+    document.getElementById("photo-ocr-input").onchange = e => {
+      if (e.target.files[0]) handlePhoto(e.target.files[0]);
     };
 
-    function renderCode() {
-      const output = document.getElementById("output");
-      output.innerHTML = "";
-      const color = document.getElementById("code-color").value;
-
-      if (currentType === "qr") {
-        const canvas = document.createElement("canvas");
-        QRCode.toCanvas(canvas, currentValue, {
-          width: 260,
-          color: { dark: color, light: "#ffffff" },
-          margin: 2
-        }, (err) => {
-          if (!err) output.appendChild(canvas);
-        });
-      } else if (currentType === "dm") {
-        if (typeof bwipjs === "undefined") {
-          output.innerHTML = "<p style='color:#f87171;padding:10px'>Bibliothèque DataMatrix non chargée — vérifie ta connexion</p>";
-          return;
-        }
-        const canvas = document.createElement("canvas");
-        try {
-          bwipjs.toCanvas(canvas, {
-            bcid: "datamatrix", text: currentValue, scale: 4,
-            barcolor: color.replace("#", ""), background: "ffffff"
-          });
-          output.appendChild(canvas);
-        } catch (e) {
-          output.innerHTML = "<p style='color:#f87171;padding:10px'>Valeur non compatible avec le DataMatrix</p>";
-        }
-      } else {
-        const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
-        try {
-          JsBarcode(svg, currentValue, {
-            format: BC_TYPES[bcIndex].code,
-            lineColor: color,
-            width: 2,
-            height: 80,
-            displayValue: true,
-            fontSize: 16,
-            margin: 10
-          });
-          output.appendChild(svg);
-        } catch (e) {
-          output.innerHTML = "<p style='color:#f87171;padding:10px'>Cette valeur ne va pas avec le type " + BC_TYPES[bcIndex].label + ".<br>Appuie sur le bouton « 🏷️ Type » ci-dessus pour essayer un autre type.</p>";
-        }
+    document.getElementById("ai-key-btn").onclick = () => {
+      const k = document.getElementById("ai-key");
+      const q = document.getElementById("ai-question");
+      const p = document.getElementById("ai-privacy");
+      const show = k.style.display === "none";
+      k.style.display = show ? "block" : "none";
+      q.style.display = show ? "block" : "none";
+      p.style.display = show ? "block" : "none";
+      if (show && localStorage.getItem("gscan-gemini")) k.value = localStorage.getItem("gscan-gemini");
+    };
+    document.getElementById("ai-key").onchange = () => {
+      localStorage.setItem("gscan-gemini", document.getElementById("ai-key").value.trim());
+    };
+    document.getElementById("ai-btn").onclick = () => {
+      const key = document.getElementById("ai-key").value.trim() || localStorage.getItem("gscan-gemini");
+      if (!key) {
+        document.getElementById("ai-key-btn").click();
+        toast("Colle d'abord ta clé Gemini");
+        return;
       }
+      document.getElementById("ai-photo-input").click();
+    };
+    document.getElementById("ai-photo-input").onchange = async e => {
+      const file = e.target.files[0];
+      if (!file) return;
+      const key = document.getElementById("ai-key").value.trim() || localStorage.getItem("gscan-gemini");
+      const question = document.getElementById("ai-question").value.trim() || "Extrais tous les codes (QR, barres, DataMatrix) et le texte important de cette image. Réponds en français, clairement.";
+      toast("🤖 Envoi à Gemini…");
+      try {
+        const b64 = await fileToBase64(file);
+        const text = await aiCall(question, b64.split(",")[1], file.type, key);
+        if (!text) throw new Error("Aucun modèle Gemini n'a répondu");
+        document.getElementById("ai-answer").style.display = "block";
+        document.getElementById("ai-answer").innerHTML = `<div class="card" style="margin-top:8px;text-align:left;font-size:0.9rem;white-space:pre-wrap">${esc(text)}</div>`;
+        const cands = extractCandidates(text);
+        if (cands.length) showResult(cands[0]);
+      } catch (err) {
+        alert("Erreur Gemini : " + err.message);
+      }
+    };
+    // Appel Gemini avec repli sur modèles récents (si l'un est retiré → suivant)
+    const AI_MODELS = ["gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-flash"];
+    async function aiCall(prompt, b64Data, mime, key) {
+      for (const model of AI_MODELS) {
+        try {
+          const parts = [{ text: prompt }];
+          if (b64Data) parts.push({ inline_data: { mime_type: mime || "image/jpeg", data: b64Data } });
+          const res = await fetch("https://generativelanguage.googleapis.com/v1beta/models/" + model + ":generateContent?key=" + key, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ contents: [{ parts: parts }] })
+          });
+          if (!res.ok) continue; // modèle retiré → essayer le suivant
+          const j = await res.json();
+          const text = j?.candidates?.[0]?.content?.parts?.[0]?.text;
+          if (text) return text;
+        } catch (e) {}
+      }
+      return "";
     }
 
-    // ===== Download (PNG pour TOUS les types, y compris codes-barres SVG) =====
-    function svgToCanvas(svgEl) {
-      return new Promise((resolve, reject) => {
-        try {
-          const clone = svgEl.cloneNode(true);
-          const xml = new XMLSerializer().serializeToString(clone);
-          const svg64 = "data:image/svg+xml;charset=utf-8," + encodeURIComponent(xml);
-          const img = new Image();
-          img.onload = () => {
-            const c = document.createElement("canvas");
-            c.width = Math.max(img.width, 1);
-            c.height = Math.max(img.height, 1);
-            const ctx = c.getContext("2d");
-            ctx.fillStyle = "#ffffff";
-            ctx.fillRect(0, 0, c.width, c.height);
-            ctx.drawImage(img, 0, 0);
-            resolve(c);
-          };
-          img.onerror = () => reject(new Error("SVG invalide"));
-          img.src = svg64;
-        } catch (e) { reject(e); }
+    function fileToBase64(file) {
+      return new Promise((res, rej) => {
+        const r = new FileReader();
+        r.onload = () => res(r.result);
+        r.onerror = rej;
+        r.readAsDataURL(file);
       });
     }
 
-    document.getElementById("download-btn").onclick = async () => {
-      const canvas = document.querySelector("#output canvas");
-      try {
-        let target = canvas;
-        if (!target) {
-          const svg = document.querySelector("#output svg");
-          if (svg) target = await svgToCanvas(svg);
-        }
-        if (!target) { alert("Aucun code affiché — génère d'abord un code."); return; }
-        const a = document.createElement("a");
-        a.href = target.toDataURL("image/png");
-        a.download = "g-scan-qrcode.png";
-        a.click();
-      } catch (err) {
-        alert("Le téléchargement PNG a échoué.\nTu peux utiliser « 🖨️ Imprimer » ou une capture d'écran à la place.");
-      }
-    };
-
-    // ===== Print =====
-    document.getElementById("print-btn").onclick = () => window.print();
-
-    // ===== Clear =====
-    document.getElementById("clear-btn").onclick = () => {
-      document.getElementById("result-area").style.display = "none";
-      document.getElementById("repair-note").style.display = "none";
-      currentValue = "";
-    };
-
-    // ===== History =====
-    function addToHistory(val) {
-      history = history.filter(h => h !== val);
-      history.unshift(val);
-      if (history.length > 20) history.pop();
-      localStorage.setItem("gscan-history", JSON.stringify(history));
-      renderHistory();
-    }
-
-    function renderHistory() {
-      const list = document.getElementById("history-list");
-      if (history.length === 0) {
-        list.innerHTML = "Aucun code pour le moment";
+    document.getElementById("nfc-read-btn").onclick = async () => {
+      if (!("NDEFReader" in window)) {
+        alert("NFC non supporté sur ce navigateur / appareil.\nChrome Android + HTTPS requis.");
         return;
       }
-      list.innerHTML = history.map(h => {
-        const safe = h.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/'/g, "\\'").replace(/"/g, "&quot;");
-        return `
-          <div class="history-item">
-            <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:70%">${safe}</span>
-            <button onclick="showResult('${safe}')">Voir</button>
-          </div>
-        `;
-      }).join("");
-    }
-
-    document.getElementById("clear-history").onclick = () => {
-      history = [];
-      localStorage.removeItem("gscan-history");
-      renderHistory();
+      try {
+        const ndef = new NDEFReader();
+        document.getElementById("nfc-status").style.display = "block";
+        document.getElementById("nfc-status").textContent = "📡 Approche la puce…";
+        await ndef.scan();
+        ndef.onreading = event => {
+          const decoder = new TextDecoder();
+          for (const rec of event.message.records) {
+            if (rec.recordType === "text" || rec.recordType === "url") {
+              const val = decoder.decode(rec.data);
+              showResult(val);
+              document.getElementById("nfc-status").textContent = "✅ Lu : " + val.slice(0, 60);
+              return;
+            }
+          }
+          document.getElementById("nfc-status").textContent = "Puce lue mais format non texte.";
+        };
+      } catch (e) {
+        document.getElementById("nfc-status").textContent = "Erreur NFC : " + e.message;
+      }
+    };
+    document.getElementById("nfc-write-btn").onclick = async () => {
+      if (!currentValue) return toast("Scanne ou génère un code d'abord");
+      if (!("NDEFReader" in window)) {
+        alert("NFC non supporté.");
+        return;
+      }
+      try {
+        const ndef = new NDEFReader();
+        document.getElementById("nfc-status").style.display = "block";
+        document.getElementById("nfc-status").textContent = "📡 Approche la puce pour écrire…";
+        await ndef.write({ records: [{ recordType: "text", data: currentValue }] });
+        document.getElementById("nfc-status").textContent = "✅ Écrit avec succès !";
+        toast("✅ Écrit sur la puce");
+      } catch (e) {
+        document.getElementById("nfc-status").textContent = "Erreur écriture : " + e.message;
+      }
     };
 
-    // Init
-    renderHistory();
+    showSection("sec-scan");
   </script>
-<script type="module" src="https://static.cloudflareinsights.com/beacon.min.js/v4bc70e2c01a94c73b74392e4234840661791215815920" integrity="sha512-L0ha0OXavK/8okipN9F8BtP84dg9DUhPERbBXzwI6dgTA55d2+yweo3pn5CSFYs45/r8md2+xvUPtTdvTNRfjA==" nonce="a7XjMil2/T6N13u9fRqvnA==" data-cf-beacon='{"version":"2024.11.0","token":"36b4216ae2dc4d5488c249161e71fe1e","spa":2}' crossorigin="anonymous"></script>
 </body>
 </html>
