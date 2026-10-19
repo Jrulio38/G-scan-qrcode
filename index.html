@@ -713,8 +713,10 @@
         bProd.className = "secondary";
         bProd.textContent = "📊 Caractéristiques du produit";
         bProd.onclick = () => {
-          tryLoadProduct(v);
-          setTimeout(() => document.getElementById("product-info").scrollIntoView({ behavior: "smooth", block: "nearest" }), 250);
+          toast("📊 Recherche des caractéristiques…");
+          tryLoadProduct(v, true);
+          document.getElementById("product-info").scrollIntoView({ behavior: "smooth", block: "nearest" });
+          setTimeout(() => document.getElementById("product-info").scrollIntoView({ behavior: "smooth", block: "start" }), 400);
         };
         row.appendChild(bProd);
       }
@@ -758,9 +760,9 @@
 
     const PROD_HEADER = "<div style=\"font-weight:700;color:#c4b5fd;font-size:0.92rem;margin-bottom:8px;\">📦 Données du produit</div>";
     let lastProductCode = null;
-    async function tryLoadProduct(barcode) {
+    async function tryLoadProduct(barcode, force) {
       const zone = document.getElementById("product-info");
-      if (barcode === lastProductCode && zone.innerHTML.trim() !== "") return; // déjà affiché
+      if (barcode === lastProductCode && zone.innerHTML.trim() !== "" && !force) return; // déjà affiché
       lastProductCode = barcode;
       if (!/^\d{8,14}$/.test(barcode)) {
         zone.innerHTML = PROD_HEADER + "<p class='hint' style=\"margin:0\">Ce code n'est pas un code produit (8 à 14 chiffres). Les bases libres ne peuvent pas le chercher — le bouton 🤖 « Identifier avec l'IA » ci-dessus peut dire ce que c'est.</p>";
@@ -809,6 +811,38 @@
       if (!chips) chips = "<span style='font-size:12px;color:#9ca3af'>Pas de score disponible</span>";
 
       const categ = (p.categories_tags || []).slice(0, 2).map(c => c.replace(/^..:/, "")).join(" · ");
+
+      // V23 : composition, allergènes, additifs, quantité, nutrition
+      const name = (p.product_name || p.generic_name || p.name || "").trim();
+      const compRaw = (p.ingredients_text_fr || p.ingredients_text_fr_debug || p.ingredients_text || p.ingredients || "").replace(/\s+/g, " ").trim();
+      const comp = compRaw ? (compRaw.charAt(0).toUpperCase() + compRaw.slice(1)) : "";
+      const allergList = (p.allergens_tags || []).map(a => a.replace(/^[a-z]{2}:/, "").replace(/-/g, " "));
+      const allergTxt = ((p.allergens || "").replace(/^[^:]*:/, "").trim() || allergList.join(", ")).trim();
+      const traces = (p.traces_tags || []).map(a => a.replace(/^[a-z]{2}:/, "").replace(/-/g, " ")).join(", ");
+      const additifs = (p.additives_tags || []).map(a => a.replace(/^..:/, ""));
+      const additifsN = p.additives_n || additifs.length || 0;
+      const additifsTxt = additifs.slice(0, 10).join(", ") + (additifs.length > 10 ? "… (+" + (additifs.length - 10) + ")" : "");
+      const quantity = (p.quantity || "").trim();
+      const packTxt = (p.packaging || "").split(",").map(x => x.replace(/^[^:]*:/, "").replace(/-/g, " ").trim()).filter(Boolean).slice(0, 4)
+        .map(x => x.charAt(0).toUpperCase() + x.slice(1)).join(", ");
+      const prep = (p.preparation_text_fr || p.preparation_text || "").replace(/\s+/g, " ").trim();
+      const nut = p.nutriments || {};
+      const nutriLine = [
+        nut["energy-kcal_100g"] != null ? "⚡ " + nut["energy-kcal_100g"] + " kcal" : null,
+        nut["proteins_100g"] != null ? "💪 protéines " + nut["proteins_100g"] + " g" : null,
+        nut["fat_100g"] != null ? "🧈 mat. grasses " + nut["fat_100g"] + " g" : null,
+        nut["sugars_100g"] != null ? "🍯 sucres " + nut["sugars_100g"] + " g" : null,
+        nut["salt_100g"] != null ? "🧂 sel " + nut["salt_100g"] + " g" : null
+      ].filter(Boolean).join(" · ");
+      const fiber = nut["fiber_100g"] != null ? "🌾 fibres " + nut["fiber_100g"] + " g" : null;
+
+      // V23 : liens fiche complète + avis clients
+      const host = source === "Open Beauty Facts" ? "https://world.openbeautyfacts.org/product/" + barcode
+        : source === "Open Products Facts" ? "https://world.openproductsfacts.org/product/" + barcode
+        : "https://world.openfoodfacts.org/product/" + barcode;
+      const avisQ = encodeURIComponent(((name ? name + " " : "") + (p.brands || "") + " avis clients").trim());
+      const avisUrl = "https://www.google.com/search?q=" + avisQ;
+
       zone.innerHTML = `
         <div style="display:flex;gap:12px;padding:4px 0;align-items:flex-start">
           ${img ? `<img src="${esc(img)}" alt="" style="width:64px;height:64px;object-fit:contain;border-radius:8px;background:#fff;flex-shrink:0">` : ""}
@@ -817,9 +851,24 @@
             ${p.brands ? `<div style="color:#a78bfa;font-size:13px;margin-top:2px">${esc(p.brands)}</div>` : ""}
             ${categ ? `<div style="color:#9ca3af;font-size:12px;margin-top:2px">📦 ${esc(categ)}</div>` : ""}
             <div style="margin-top:8px;display:flex;flex-wrap:wrap;align-items:center">${chips}</div>
-            <div style="color:#6b7280;font-size:11px;margin-top:8px">Source : ${esc(source)} · ${esc(barcode)}</div>
+            ${quantity || packTxt ? `<div style="color:#9ca3af;font-size:12px;margin-top:6px">${quantity ? "📏 " + esc(quantity) + " " : ""}${packTxt ? "📦 " + esc(packTxt) : ""}</div>` : ""}
           </div>
-        </div>`;
+        </div>
+        ${comp ? `
+        <div style="margin-top:10px;padding:8px;background:rgba(139,92,246,0.08);border-radius:8px">
+          <div style="font-weight:700;color:#c4b5fd;font-size:0.85rem;margin-bottom:4px">🧪 Composition</div>
+          <div style="font-size:0.85rem;color:#ede9fe;line-height:1.45">${esc(comp)}</div>
+        </div>` : `
+        <div style="margin-top:8px;font-size:0.8rem;color:#9ca3af">ℹ️ Composition non renseignée pour ce produit dans la base ${esc(source)}.</div>`}
+        ${allergTxt ? `<div style="margin-top:8px;font-size:0.85rem;color:#fbbf24">⚠️ Allergènes : ${esc(allergTxt)}${traces ? " <span style='color:#9ca3af'>(traces : " + esc(traces) + ")</span>" : ""}</div>` : ""}
+        ${additifsN ? `<div style="margin-top:6px;font-size:0.85rem;color:#ede9fe">🔬 Additifs (${additifsN}) : ${esc(additifsTxt || String(additifsN))}</div>` : ""}
+        ${nutriLine ? `<div style="margin-top:8px;padding:8px;background:rgba(139,92,246,0.08);border-radius:8px;font-size:0.85rem;color:#ede9fe"><span style="font-weight:700;color:#c4b5fd">🍎 Pour 100 g :</span> ${esc(nutriLine)}${fiber ? " · " + esc(fiber) : ""}</div>` : ""}
+        ${prep ? `<div style="margin-top:8px;font-size:0.8rem;color:#9ca3af">📝 ${esc(prep.slice(0, 300))}${prep.length > 300 ? "…" : ""}</div>` : ""}
+        <div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap">
+          <a href="${esc(host)}" target="_blank" rel="noopener" style="flex:1;min-width:140px"><button class="secondary" style="margin-top:0;width:100%">🔗 Fiche complète (page officielle)</button></a>
+          <a href="${esc(avisUrl)}" target="_blank" rel="noopener" style="flex:1;min-width:140px"><button class="secondary" style="margin-top:0;width:100%">⭐ Avis clients (recherche web)</button></a>
+        </div>
+        <div style="color:#6b7280;font-size:11px;margin-top:8px">Source : ${esc(source)} · ${esc(barcode)}</div>`;
     }
 
     async function loadBookInfo(isbn) {
