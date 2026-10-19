@@ -795,6 +795,7 @@
     let lastDetections = [];
     let bestFrame = null;
     let bestSharpness = 0;
+    let tornMiss = 0, tornBusy = false;
     let torchTrack = null;
     let torchOn = false;
     let ocrWorker = null;
@@ -1015,6 +1016,676 @@
       return (sum2 / n) - mean * mean;
     }
 
+var tornApi = (function () {
+    var C128W = ["212222","222122","222221","121223","121322","131222","122213","122312","132212","221213","221312","231212","112232","122132","122231","113222","123122","123221","223211","221132","221231","213212","223112","312131","311222","321122","321221","312212","322112","322211","212123","212321","232121","111323","131123","131321","112313","132113","132311","211313","231113","231311","112133","112331","132131","113123","113321","133121","313121","211331","231131","213113","213311","213131","311123","311321","331121","312113","312311","332111","314111","221411","431111","111224","111422","121124","121421","141122","141221","112214","112412","122114","122411","142112","142211","241211","221114","413111","241112","134111","111242","121142","121241","114212","124112","124211","411212","421112","421211","212141","214121","412121","111143","111341","131141","114113","114311","411113","411311","113141","114131","311141","411131",'211412','211214','211232','2331112'];
+    function expw(w) { var s = '', b = 1; for (var i = 0; i < w.length; i++) { var n = +w.charAt(i); for (var j = 0; j < n; j++) { s += b ? '1' : '0'; } b = !b; } return s; }
+    var PAT = [], PATMAP = {};
+    for (var pi = 0; pi < C128W.length; pi++) { var pb = expw(C128W[pi]); PAT.push(pb); if (pi <= 102) PATMAP[pb] = pi; }
+    var STOPP = PAT[106];
+    var EANL = ['0001101','0011001','0010011','0111101','0100011','0110001','0101111','0111011','0110111','0001011'];
+    var EANG = ['0100111','0111001','0110011','0011011','0100001','0011101','0010001','0000101','0001001','0010111'];
+    var EANR = ['1110010','1100110','1101100','1000010','1011100','1001110','1010000','1000100','1001000','1110100'];
+    var EANML = {}, EANMG = {}, EANMR = {};
+    for (var e0 = 0; e0 < 10; e0++) { EANML[EANL[e0]] = e0; EANMG[EANG[e0]] = e0; EANMR[EANR[e0]] = e0; }
+    var EANPAR = ['LLLLLL','LLGLGG','LLGGLG','LLLGGG','LGLLGG','LGGLLG','LGGGLL','LGLGLG','LGLGGL','LGGLGL'];
+    function fPre(p, f) { return !f || p.substr(0, f.length) === f; }
+    function fSuf(p, f) { return !f || p.substr(p.length - f.length) === f; }
+    function revstr(s) { return s.split('').reverse().join(''); }
+    function eanCheck(d) { var s = 0; for (var i = 0; i < 12; i++) s += d[i] * (i % 2 ? 3 : 1); return (10 - s % 10) % 10 === d[12]; }
+    function tornEanFront(A) {
+      var best = null, lim = Math.min(A.length - 3, 30);
+      for (var o = 0; o <= lim; o++) {
+        if (A.substr(o, 3) !== '101') continue;
+        var i = o + 3, digits = [], classes = [];
+        for (var k = 0; k < 6; k++) {
+          var s = A.substr(i, 7);
+          if (s.length < 7) break;
+          var dL = EANML[s], dG = EANMG[s];
+          if (dL === undefined && dG === undefined) break;
+          if (dL !== undefined) { digits.push(dL); classes.push('L'); } else { digits.push(dG); classes.push('G'); }
+          i += 7;
+        }
+        if (!digits.length) continue;
+        var frag = A.substr(i);
+        if (frag.length >= 5 && frag.substr(0, 5) === '01010') frag = frag.substr(5);
+        else if (frag === '0101') frag = '';
+        if (frag.length > 6) frag = frag.substr(0, 6);
+        if (!best || digits.length > best.digits.length) best = { digits: digits, classes: classes, frag: frag };
+      }
+      return best;
+    }
+    function tornEanBack(B) {
+      var best = null, n = B.length;
+      for (var o = 0; o <= 4 && n - 3 - o >= 0; o++) {
+        if (B.substr(n - 3 - o, 3) !== '101') continue;
+        var i = n - 3 - o, digits = [], early = false;
+        for (var k = 0; k < 6; k++) {
+          i -= 7;
+          if (i < 0) { early = true; break; }
+          var s = B.substr(i, 7);
+          var dR = EANMR[s];
+          if (dR === undefined) { early = true; break; }
+          digits.push(dR);
+        }
+        if (!digits.length) continue;
+        var fragTo = early ? i + 7 : i;
+        var frag = fragTo > 0 ? B.substr(0, fragTo) : '';
+        if (frag.length >= 5 && frag.substr(frag.length - 5) === '01010') frag = frag.substr(0, frag.length - 5);
+        else if (frag.length === 4 && frag === '0101') frag = '';
+        if (frag.length > 6) frag = frag.substr(frag.length - 6);
+        if (!best || digits.length > best.digits.length) best = { digits: digits, frag: frag };
+      }
+      return best;
+    }
+    function tornEanSols(F, Bk, fa, fb) {
+      var a = 6 - F.digits.length, b = 6 - Bk.digits.length;
+      if (a + b > 2) return null;
+      // sécurité : des chiffres inconnus exigent un bord déchiré visible (sinon risque de fausse valeur)
+      if (a + b > 0 && !fa && !fb) return null;
+      var sols = {};
+      for (var d1 = 0; d1 < 10; d1++) {
+        var par = EANPAR[d1], okc = true;
+        for (var ci = 0; ci < F.classes.length; ci++) if (par.charAt(ci) !== F.classes[ci]) { okc = false; break; }
+        if (!okc) continue;
+        var rec = function (k, lu, ru) {
+          if (k === a + b) {
+            var digits = [d1].concat(F.digits, lu, ru, Bk.digits.slice().reverse());
+            if (!eanCheck(digits)) return;
+            sols[digits.join('')] = 1;
+            return;
+          }
+          if (k < a) {
+            for (var dg = 0; dg < 10; dg++) {
+              var pat = par.charAt(F.digits.length + k) === 'L' ? EANL[dg] : EANG[dg];
+              if (k === 0 && fa && !fPre(pat, fa)) continue;
+              if (b === 0 && k === a - 1 && fb && !fSuf(pat, fb)) continue;
+              rec(k + 1, lu.concat([dg]), ru);
+            }
+          } else {
+            var kk = k - a;
+            for (var dg2 = 0; dg2 < 10; dg2++) {
+              if (a === 0 && kk === 0 && fa && !fPre(EANR[dg2], fa)) continue;
+              if (kk === b - 1 && fb && !fSuf(EANR[dg2], fb)) continue;
+              rec(k + 1, lu, ru.concat([dg2]));
+            }
+          }
+        };
+        rec(0, [], []);
+      }
+      var keys = [];
+      for (var kk2 in sols) keys.push(kk2);
+      return keys;
+    }
+    function tornEanBridge(F, Bk) {
+      var sAmax = F.frag ? 3 : 0, sBmax = Bk.frag ? 3 : 0;
+      for (var sA = 0; sA <= sAmax; sA++) {
+        var fa = F.frag ? F.frag.substr(0, F.frag.length - sA) : '';
+        if (F.frag && !fa) break;
+        for (var sB = 0; sB <= sBmax; sB++) {
+          var fb = Bk.frag ? Bk.frag.substr(sB) : '';
+          if (Bk.frag && !fb) break;
+          var keys = tornEanSols(F, Bk, fa, fb);
+          if (keys === null) return null;
+          if (keys.length === 1) return keys[0];
+          if (keys.length > 1) return null;
+        }
+      }
+      return null;
+    }
+    function tornTryEan(A, B) {
+      var F = tornEanFront(A);
+      if (!F || !F.digits.length) return null;
+      var Bk = B ? tornEanBack(B) : tornEanBack(A);
+      if (!Bk) return null;
+      var v = tornEanBridge(F, Bk);
+      return v ? { value: v, format: 'EAN13', how: 'EAN-13' } : null;
+    }
+    function tornVal(s) { var v = PATMAP[s]; return v === undefined ? -1 : v; }
+    function tornC128Front(A) {
+      var best = null;
+      for (var si = 105; si >= 103; si--) {
+        var pat = PAT[si];
+        for (var o = 0; o + 11 <= Math.min(A.length, 31); o++) {
+          if (A.substr(o, 11) !== pat) continue;
+          var i = o + 11, vals = [];
+          for (var k = 0; k < 80; k++) {
+            var s = A.substr(i, 11);
+            if (s.length < 11) { if (!best || vals.length > best.vals.length) best = { start: si, vals: vals, frag: s.length > 10 ? s.substr(0, 10) : s }; break; }
+            var v = tornVal(s);
+            if (v < 0 || v >= 103) { if (!best || vals.length > best.vals.length) best = { start: si, vals: vals, frag: s.length > 10 ? s.substr(0, 10) : s }; break; }
+            vals.push(v); i += 11;
+          }
+        }
+      }
+      return best;
+    }
+    function tornC128Back(B) {
+      var best = null, n = B.length;
+      for (var o = 0; o <= 20 && n - 13 - o >= 0; o++) {
+        if (B.substr(n - 13 - o, 13) !== STOPP) continue;
+        var i = n - 13 - o, vals = [], early = false;
+        for (var k = 0; k < 80; k++) {
+          i -= 11;
+          if (i < 0) { early = true; break; }
+          var s = B.substr(i, 11);
+          var v = tornVal(s);
+          if (v < 0 || v >= 103) { early = true; break; }
+          vals.push(v);
+        }
+        if (!vals.length) continue;
+        var fragTo = early ? i + 11 : i;
+        var frag = fragTo > 0 ? B.substr(0, fragTo) : '';
+        if (frag.length > 10) frag = frag.substr(frag.length - 10);
+        if (!best || vals.length > best.vals.length) best = { vals: vals, frag: frag };
+      }
+      return best;
+    }
+    function tornC128Text(start, vals) {
+      if (start === 105) {
+        if (vals.length % 2) return null;
+        var s = '';
+        for (var i = 0; i < vals.length; i++) { if (vals[i] > 99) return null; var t = '' + vals[i]; if (t.length < 2) t = '0' + t; s += t; }
+        return s;
+      }
+      if (start === 104) {
+        var s2 = '';
+        for (var j = 0; j < vals.length; j++) { if (vals[j] > 94) return null; s2 += String.fromCharCode(vals[j] + 32); }
+        return s2;
+      }
+      return null;
+    }
+    function tornInv(k) { k = ((k % 103) + 103) % 103; if (!k) return 0; for (var m = 1; m < 103; m++) if ((k * m) % 103 === 1) return m; return 0; }
+    function tornC128Bridge(A, F, B, Bk) {
+      var fragA = F.frag;
+      if (!B) {
+        var okS = false;
+        for (var o = 0; o <= 20; o++) { if (A.length - 13 - o >= 0 && A.substr(A.length - 13 - o, 13) === STOPP) { okS = true; break; } }
+        if (!okS || !F.vals.length) return null;
+        var vals = F.vals.slice();
+        var chk = vals.pop();
+        var txt = tornC128Text(F.start, vals);
+        if (txt === null) return null;
+        var s = F.start;
+        for (var k = 0; k < vals.length; k++) s += vals[k] * (k + 1);
+        if (s % 103 !== chk) return null;
+        return txt;
+      }
+      if (!Bk) return null;
+      var fragB = Bk.frag;
+      var checkKnown = Bk.vals.length > 0;
+      var chk = checkKnown ? Bk.vals[0] : -1;
+      var bvRest = Bk.vals.slice(1).reverse();
+      var sAmax = fragA ? 3 : 0, sBmax = fragB ? 3 : 0;
+      for (var sA = 0; sA <= sAmax; sA++) {
+        var fa = fragA ? fragA.substr(0, fragA.length - sA) : '';
+        if (fragA && !fa) break;
+        for (var sB = 0; sB <= sBmax; sB++) {
+          var fb = fragB ? fragB.substr(sB) : '';
+          if (fragB && !fb) break;
+          for (var u = 0; u <= 2; u++) {
+            var tot = u + (checkKnown ? 0 : 1);
+            if (tot > 2) break;
+            // sécurité : des valeurs inconnues exigent un bord déchiré visible d'au moins un côté
+            if (u >= 1 && !fa && !fb) continue;
+            if (u === 0) {
+              var payload0 = F.vals.concat(bvRest);
+              var t0 = tornC128Text(F.start, payload0);
+              if (t0 === null) continue;
+              var s0 = F.start;
+              for (var k0 = 0; k0 < payload0.length; k0++) s0 += payload0[k0] * (k0 + 1);
+              if (checkKnown) { if (s0 % 103 === chk) return t0; }
+              else { if (fSuf(PAT[s0 % 103], fb)) return t0; }
+              continue;
+            }
+            if (u === 1) {
+              var kx = F.vals.length + 1, ix = tornInv(kx);
+              if (!ix) continue;
+              if (checkKnown) {
+                var known = 0;
+                for (var k1 = 0; k1 < F.vals.length; k1++) known += F.vals[k1] * (k1 + 1);
+                for (var k2 = 0; k2 < bvRest.length; k2++) known += bvRest[k2] * (F.vals.length + 2 + k2);
+                var base = (chk - F.start - known) % 103; if (base < 0) base += 103;
+                var cand = (base * ix) % 103;
+                if (cand > 102) continue;
+                if (!fPre(PAT[cand], fa) || !fSuf(PAT[cand], fb)) continue;
+                var pay1 = F.vals.concat([cand], bvRest);
+                var t1 = tornC128Text(F.start, pay1);
+                if (t1 !== null) return t1;
+              } else {
+                var sols1 = {};
+                for (var c1 = 0; c1 <= 102; c1++) {
+                  if (!fPre(PAT[c1], fa)) continue;
+                  var pay = F.vals.concat([c1], bvRest);
+                  var tt = tornC128Text(F.start, pay);
+                  if (tt === null) continue;
+                  var ss = F.start;
+                  for (var q = 0; q < pay.length; q++) ss += pay[q] * (q + 1);
+                  if (!fSuf(PAT[ss % 103], fb)) continue;
+                  sols1[tt] = 1;
+                }
+                var keys1 = []; for (var q2 in sols1) keys1.push(q2);
+                if (keys1.length === 1) return keys1[0];
+                if (keys1.length > 1) return null;
+              }
+              continue;
+            }
+            if (!checkKnown) break;
+            var kx1 = F.vals.length + 1, kx2 = kx1 + 1, ix2 = tornInv(kx2);
+            if (!ix2) continue;
+            var known2 = 0;
+            for (var k3 = 0; k3 < F.vals.length; k3++) known2 += F.vals[k3] * (k3 + 1);
+            for (var k4 = 0; k4 < bvRest.length; k4++) known2 += bvRest[k4] * (kx2 + 1 + k4);
+            var sols2 = {};
+            for (var v1 = 0; v1 <= 102; v1++) {
+              if (!fPre(PAT[v1], fa)) continue;
+              var t2 = (chk - F.start - known2 - v1 * kx1) % 103; if (t2 < 0) t2 += 103;
+              var r2 = (t2 * ix2) % 103;
+              if (r2 > 102) continue;
+              if (!fSuf(PAT[r2], fb)) continue;
+              var pay2 = F.vals.concat([v1, r2], bvRest);
+              var tx2 = tornC128Text(F.start, pay2);
+              if (tx2 === null) continue;
+              sols2[tx2] = 1;
+            }
+            var keys2 = []; for (var q3 in sols2) keys2.push(q3);
+            if (keys2.length === 1) return keys2[0];
+            if (keys2.length > 1) return null;
+          }
+        }
+      }
+      return null;
+    }
+    function tornTryDir(A, B) {
+      var r = tornTryEan(A, B);
+      if (r) return r;
+      var F = tornC128Front(A);
+      if (!F || (!F.vals.length && F.frag.length < 6)) return null;
+      var Bk = B ? tornC128Back(B) : null;
+      if (B && !Bk) return null;
+      var txt = tornC128Bridge(A, F, B, Bk);
+      return txt ? { value: txt, format: 'CODE128', how: 'Code 128' } : null;
+    }
+    /* ====== EXTENSION : CODE DÉCHIRÉ EN 3 MORCEAUX (tête + milieu + queue) ====== */
+    // maps motif → chiffre (les tableaux EANL/EANG/EANR ne sont pas indexables par motif)
+    var EANLM3 = {}, EANGM3 = {}, EANRM3 = {};
+    for (var e3 = 0; e3 < 10; e3++) { EANLM3[EANL[e3]] = e3; EANGM3[EANG[e3]] = e3; EANRM3[EANR[e3]] = e3; }
+    // Chiffres inconnus : uniquement aux 2 jonctions (<= 2 au total), solution UNIQUE exigée.
+    function tornEan3Sols(F, M, Bk, fa, fb) {
+      var kF = F.digits.length, kT = Bk.digits.length;
+      var sols = { 0: {}, 1: {}, 2: {} }; // solutions classées par nombre de chiffres inconnus
+      for (var aL = 0; aL <= 13; aL++) {
+        for (var aR = 0; aR <= 13; aR++) {
+          var cl0 = M.length - aL - aR;
+          if (cl0 < 7) continue;
+          var core0 = M.substr(aL, cl0);
+          // variantes du morceau central : brut, ou avec la garde médiane '01010' retirée
+          var variants = [core0];
+          var gAt = core0.indexOf('01010');
+          while (gAt >= 0) {
+            var gl = core0.substr(0, gAt), gr = core0.substr(gAt + 5);
+            if (gl.length % 7 === 0 && gr.length % 7 === 0 && gl.length + gr.length >= 7) {
+              variants.push({ core: gl + gr, gd: gl.length / 7 });
+            }
+            gAt = core0.indexOf('01010', gAt + 1);
+          }
+          for (var vi = 0; vi < variants.length; vi++) {
+            var coreS = typeof variants[vi] === 'string' ? variants[vi] : variants[vi].core;
+            var guardDigits = typeof variants[vi] === 'string' ? -1 : variants[vi].gd;
+            var kM = coreS.length / 7;
+            if (kM > 8) continue;
+            var u = 12 - kF - kM - kT;
+            if (u < 0 || u > 2) continue;
+            if (aL > 0 && u < 1) continue;
+            if (aR > 0 && u < 1) continue;
+            if (aL > 0 && aR > 0 && u < 2) continue;
+            for (var d1 = 0; d1 < 10; d1++) {
+              var par = EANPAR[d1], okc = true;
+              for (var ci = 0; ci < F.classes.length && ci < 6; ci++) if (par.charAt(ci) !== F.classes[ci]) { okc = false; break; }
+              if (!okc) continue;
+              for (var u1 = 0; u1 <= u; u1++) {
+                var u2 = u - u1;
+                if (u1 === 0 && aL > 0) continue;
+                if (u2 === 0 && aR > 0) continue;
+                // sécurité : géométrie de la déchirure — un chiffre inconnu de 7 modules est réparti entre le fragment de bord (fa/fb) et le milieu ; aucune module ne disparaît
+                if (u1 > 0 && (!fa || aL < 1 || fa.length + aL !== 7 * u1)) continue;
+                if (u2 > 0 && (!fb || aR < 1 || fb.length + aR !== 7 * u2)) continue;
+                // la garde médiane doit tomber exactement entre d7 et d8
+                if (guardDigits >= 0 && 2 + kF + u1 + guardDigits !== 8) continue;
+                var md = [], okm = true;
+                for (var i = 0; i < kM; i++) {
+                  var pos = 2 + kF + u1 + i;
+                  var tab = pos <= 7 ? (par.charAt(pos - 2) === 'L' ? EANLM3 : EANGM3) : EANRM3;
+                  var dv = tab[coreS.substr(7 * i, 7)];
+                  if (dv === undefined) { okm = false; break; }
+                  md.push(dv);
+                }
+                if (!okm) continue;
+                // contraintes de motif aux jonctions
+                if (u1 === 0 && fa) {
+                  var p0 = 2 + kF;
+                  var t0 = p0 <= 7 ? (par.charAt(p0 - 2) === 'L' ? EANL : EANG) : EANR;
+                  if (!fPre(t0[md[0]], fa)) continue;
+                }
+                if (u2 === 0 && fb) {
+                  var p1 = 13 - kT - 1;
+                  var t1b = p1 <= 7 ? (par.charAt(p1 - 2) === 'L' ? EANL : EANG) : EANR;
+                  if (!fSuf(t1b[md[md.length - 1]], fb)) continue;
+                }
+                var arr = [d1].concat(F.digits.slice());
+                for (var qa = 0; qa < u1; qa++) arr.push(-1);
+                arr = arr.concat(md);
+                for (var qb = 0; qb < u2; qb++) arr.push(-1);
+                arr = arr.concat(Bk.digits.slice().reverse());
+                if (arr.length !== 13) continue;
+                // liste des inconnues : position + contrainte ('pre' sur la 1re de jonction 1, 'suf' sur la dernière de jonction 2)
+                var unk = [];
+                if (u1 > 0) for (var q1 = 0; q1 < u1; q1++) unk.push({ p: 2 + kF + q1, c: q1 === 0 ? 'pre' : null });
+                if (u2 > 0) for (var q2 = 0; q2 < u2; q2++) unk.push({ p: 2 + kF + u1 + kM + q2, c: q2 === u2 - 1 ? 'suf' : null });
+                var rec = function (k) {
+                  if (k === unk.length) { if (eanCheck(arr)) sols[u][arr.join('')] = 1; return; }
+                  var pp = unk[k].p, cc = unk[k].c;
+                  var tabx = pp <= 7 ? (par.charAt(pp - 2) === 'L' ? EANL : EANG) : EANR;
+                  for (var dv2 = 0; dv2 < 10; dv2++) {
+                    var pat = tabx[dv2];
+                    if (cc === 'pre' && fa) { if (!fPre(pat, fa)) continue; if (u1 === 1 && pat.substr(fa.length) !== M.substr(0, aL)) continue; }
+                    if (cc === 'suf' && fb) { if (!fSuf(pat, fb)) continue; if (u2 === 1 && pat.substr(0, aR) !== M.substr(M.length - aR, aR)) continue; }
+                    arr[pp - 1] = dv2;
+                    rec(k + 1);
+                  }
+                  arr[pp - 1] = -1;
+                };
+                if (unk.length === 0) { if (eanCheck(arr)) sols[u][arr.join('')] = 1; }
+                else rec(0);
+              }
+            }
+          }
+        }
+      }
+      var out = [null, null, null];
+      for (var u3 = 0; u3 <= 2; u3++) { var k3 = []; for (var kk3 in sols[u3]) k3.push(kk3); out[u3] = k3; }
+      return out;
+    }
+    function tornEan3Bridge(F, M, Bk) {
+      var sAmax = F.frag ? 3 : 0, sBmax = Bk.frag ? 3 : 0;
+      for (var sA = 0; sA <= sAmax; sA++) {
+        var fa = F.frag ? F.frag.substr(0, F.frag.length - sA) : '';
+        if (F.frag && !fa) break;
+        for (var sB = 0; sB <= sBmax; sB++) {
+          var fb = Bk.frag ? Bk.frag.substr(sB) : '';
+          if (Bk.frag && !fb) break;
+          var buckets = tornEan3Sols(F, M, Bk, fa, fb);
+          for (var uu = 0; uu <= 2; uu++) {
+            var kk = buckets[uu];
+            if (!kk || !kk.length) continue;
+            if (kk.length === 1) return kk[0];
+            return null; // ambigu au niveau le plus bas → refus
+          }
+        }
+      }
+      return null;
+    }
+    function tornC1283Sols(F, M, Bk, fa, fb) {
+      var sols = { 0: {}, 1: {}, 2: {} }, checkKnown = Bk.vals.length > 0, chk = checkKnown ? Bk.vals[0] : -1;
+      var bvRest = Bk.vals.slice(1).reverse();
+      var maxU = checkKnown ? 2 : 1;
+      var addSol = function (pay, nU) {
+        var t = tornC128Text(F.start, pay);
+        if (t !== null) sols[nU][t] = 1;
+      };
+      for (var aL = 0; aL <= 21; aL++) {
+        for (var aR = 0; aR <= 21; aR++) {
+          var cl = M.length - aL - aR;
+          if (cl < 11 || cl % 11) continue;
+          var kM = cl / 11;
+          if (kM > 24) continue;
+          var mvals = [], okm = true;
+          for (var i = 0; i < kM; i++) {
+            var v = tornVal(M.substr(aL + 11 * i, 11));
+            if (v < 0 || v >= 103) { okm = false; break; }
+            mvals.push(v);
+          }
+          if (!okm) continue;
+          for (var u1 = 0; u1 <= maxU; u1++) {
+            for (var u2 = 0; u1 + u2 <= maxU; u2++) {
+              if (u1 === 0 && aL > 0) continue;
+              if (u2 === 0 && aR > 0) continue;
+              // sécurité : géométrie de la déchirure — une valeur inconnue de 11 modules est répartie entre le fragment de bord (fa/fb) et le milieu ; aucune module ne disparaît
+              if (u1 > 0 && (!fa || aL < 1 || fa.length + aL !== 11 * u1)) continue;
+              if (u2 > 0 && (!fb || aR < 1 || fb.length + aR !== 11 * u2)) continue;
+              if (u1 === 0 && fa && !fPre(PAT[mvals[0]], fa)) continue;
+              if (u2 === 0 && fb && !fSuf(PAT[mvals[mvals.length - 1]], fb)) continue;
+              var pay = F.vals.slice(), unkW = [];
+              for (var qa = 0; qa < u1; qa++) { unkW.push(pay.length + 1); pay.push(-1); }
+              for (var qb = 0; qb < kM; qb++) pay.push(mvals[qb]);
+              for (var qc = 0; qc < u2; qc++) { unkW.push(pay.length + 1); pay.push(-1); }
+              for (var qd = 0; qd < bvRest.length; qd++) pay.push(bvRest[qd]);
+              var nU = u1 + u2;
+              var sKnown = F.start;
+              for (var w = 0; w < pay.length; w++) if (pay[w] >= 0) sKnown += pay[w] * (w + 1);
+              if (nU === 0) {
+                if (checkKnown) { if (sKnown % 103 === chk) addSol(pay, nU); }
+                else { if (fSuf(PAT[sKnown % 103], fb)) addSol(pay, nU); }
+              } else if (nU === 1) {
+                var wx = unkW[0], ix = tornInv(wx);
+                if (!ix) continue;
+                // les modules du milieu doivent prolonger exactement le motif de la valeur inconnue
+                var midA = function (ps) { return ps.substr(fa.length, aL) === M.substr(0, aL); };
+                var midB = function (ps) { return ps.substr(0, aR) === M.substr(M.length - aR, aR); };
+                for (var c = 0; c <= 102; c++) {
+                  if (u1 === 1 && fa && (!fPre(PAT[c], fa) || !midA(PAT[c]))) continue;
+                  if (u2 === 1 && fb && (!fSuf(PAT[c], fb) || !midB(PAT[c]))) continue;
+                  var s1 = (sKnown + c * wx) % 103;
+                  if (checkKnown) { if (s1 !== chk) continue; }
+                  else { if (!fSuf(PAT[s1], fb)) continue; }
+                  pay[wx - 1] = c;
+                  addSol(pay, nU);
+                  pay[wx - 1] = -1;
+                }
+              } else {
+                var w1 = unkW[0], w2 = unkW[1], ix2 = tornInv(w2);
+                if (!ix2) continue;
+                for (var c1 = 0; c1 <= 102; c1++) {
+                  if (u1 >= 1 && fa && !fPre(PAT[c1], fa)) continue;
+                  var s2 = (sKnown + c1 * w1) % 103;
+                  var tt = ((chk - s2) % 103 + 103) % 103;
+                  var c2 = (tt * ix2) % 103;
+                  if (c2 > 102) continue;
+                  if (u2 >= 1 && fb && !fSuf(PAT[c2], fb)) continue;
+                  // prolongation des motifs par les modules du milieu (couvre u1=2 / u2=2)
+                  if (u1 >= 1 && fa) {
+                    if (PAT[c1].substr(fa.length, aL) !== M.substr(0, aL)) continue;
+                  }
+                  if (u2 >= 1 && fb) {
+                    if (PAT[c2].substr(0, aR) !== M.substr(M.length - aR, aR)) continue;
+                  }
+                  pay[w1 - 1] = c1; pay[w2 - 1] = c2;
+                  addSol(pay, nU);
+                  pay[w1 - 1] = -1; pay[w2 - 1] = -1;
+                }
+              }
+            }
+          }
+        }
+      }
+      var out = [null, null, null];
+      for (var u4 = 0; u4 <= 2; u4++) { var k4 = []; for (var kk4 in sols[u4]) k4.push(kk4); out[u4] = k4; }
+      return out;
+    }
+    function tornC1283Bridge(F, M, Bk) {
+      var sAmax = F.frag ? 3 : 0, sBmax = Bk.frag ? 3 : 0;
+      for (var sA = 0; sA <= sAmax; sA++) {
+        var fa = F.frag ? F.frag.substr(0, F.frag.length - sA) : '';
+        if (F.frag && !fa) break;
+        for (var sB = 0; sB <= sBmax; sB++) {
+          var fb = Bk.frag ? Bk.frag.substr(sB) : '';
+          if (Bk.frag && !fb) break;
+          var buckets = tornC1283Sols(F, M, Bk, fa, fb);
+          for (var uu = 0; uu <= 2; uu++) {
+            var kk = buckets[uu];
+            if (!kk || !kk.length) continue;
+            if (kk.length === 1) return kk[0];
+            return null; // ambigu au niveau le plus bas → refus
+          }
+        }
+      }
+      return null;
+    }
+    function tornTryDir3(A, M, B) {
+      // 3 morceaux d'abord (le pontage 2 morceaux ignorerait le milieu et risquerait une fausse valeur)
+      var F = tornEanFront(A);
+      if (F && F.digits.length) {
+        var Bk = tornEanBack(B);
+        if (Bk && Bk.digits.length >= 2) {
+          var v = tornEan3Bridge(F, M, Bk);
+          if (v) return { value: v, format: 'EAN13', how: 'EAN-13 · 3 morceaux' };
+        }
+      }
+      var Fc = tornC128Front(A);
+      if (Fc && (Fc.vals.length >= 1 || Fc.frag.length >= 6)) {
+        var Bc = tornC128Back(B);
+        if (Bc) {
+          var t = tornC1283Bridge(Fc, M, Bc);
+          if (t) return { value: t, format: 'CODE128', how: 'Code 128 · 3 morceaux' };
+        }
+      }
+      return tornTryDir(A, B);
+    }
+    function tornTry(A, B, M) {
+      if (M && M.length >= 7) {
+        // 3 morceaux fournis : le pontage 2 morceaux ignorerait le milieu et risquerait une fausse valeur → on refuse plutôt que deviner
+        return tornTryDir3(A, M, B) || tornTryDir3(revstr(B), revstr(M), revstr(A)) || null;
+      }
+      if (M) {
+        var r3 = tornTryDir3(A, M, B) || tornTryDir3(revstr(B), revstr(M), revstr(A));
+        if (r3) return r3;
+      }
+      return tornTryDir(A, B) || (B ? tornTryDir(revstr(B), revstr(A)) : tornTryDir(revstr(A), ''));
+    }
+    function tornClassify(P, mw, heads, tails, all) {
+      var f = tornEanFront(P);
+      var isHead = !!(f && f.digits.length >= 1);
+      if (!isHead) { var c = tornC128Front(P); isHead = !!(c && (c.vals.length >= 1 || c.frag.length >= 6)); }
+      var bk = tornEanBack(P);
+      var isTail = !!(bk && bk.digits.length >= 2);
+      if (!isTail) { var cb = tornC128Back(P); isTail = !!(cb && cb.vals.length >= 1); }
+      var obj = { b: P, mw: mw };
+      if (all.length < 60) all.push(obj);
+      if (isHead && heads.length < 40) heads.push(obj);
+      if (isTail && tails.length < 40) tails.push(obj);
+    }
+    function tornFromImage(img) {
+      try {
+        var iw = img.width || 300, ih = img.height || 300;
+        var ratio = Math.min(1, 900 / Math.max(iw, ih));
+        var w = Math.max(40, Math.round(iw * ratio)), h = Math.max(40, Math.round(ih * ratio));
+        var cv = document.createElement('canvas'); cv.width = w; cv.height = h;
+        var cx = cv.getContext('2d'); cx.drawImage(img, 0, 0, w, h);
+        var dd = cx.getImageData(0, 0, w, h).data;
+        var n = w * h, gr = new Array(n), i;
+        for (i = 0; i < n; i++) gr[i] = (dd[i * 4] * 299 + dd[i * 4 + 1] * 587 + dd[i * 4 + 2] * 114) / 1000;
+        var hist = new Array(256); for (i = 0; i < 256; i++) hist[i] = 0;
+        for (i = 0; i < n; i++) { var gi = gr[i]; gi = gi < 0 ? 0 : gi > 255 ? 255 : gi; hist[gi | 0]++; }
+        var sum = 0; for (i = 0; i < 256; i++) sum += i * hist[i];
+        var sumB = 0, wB = 0, bestv = 0, th = 128;
+        for (i = 0; i < 256; i++) {
+          wB += hist[i]; if (!wB) continue;
+          sumB += i * hist[i];
+          var mB = sumB / wB, mF = (sum - sumB) / (n - wB);
+          var v = wB * (n - wB) * (mB - mF) * (mB - mF);
+          if (v > bestv) { bestv = v; th = i; }
+        }
+        var bin = new Array(n);
+        for (i = 0; i < n; i++) bin[i] = gr[i] < th ? 1 : 0;
+        var res = null;
+        for (var ori = 0; ori < 2 && !res; ori++) {
+          var nLines = ori === 0 ? h : w, segLen = ori === 0 ? w : h;
+          var heads = [], tails = [], all = [], midsOnly = [], seen = {};
+          for (var li = 0; li < nLines; li += 2) {
+            var runs = [], cur = -1, cnt = 0, x;
+            for (x = 0; x < segLen; x++) {
+              var v2 = ori === 0 ? bin[li * w + x] : bin[x * w + li];
+              if (v2 === cur) cnt++;
+              else { if (cur >= 0) runs.push([cur, cnt]); cur = v2; cnt = 1; }
+            }
+            if (cur >= 0) runs.push([cur, cnt]);
+            while (runs.length && runs[0][0] === 0) runs.shift();
+            while (runs.length && runs[runs.length - 1][0] === 0) runs.pop();
+            var trans = 0;
+            for (var t = 1; t < runs.length; t++) if (runs[t][0] !== runs[t - 1][0]) trans++;
+            if (runs.length < 8 || trans < 7) continue;
+            var mw = Infinity;
+            for (var r = 0; r < runs.length; r++) if (runs[r][0] === 1 && runs[r][1] >= 2 && runs[r][1] < mw) mw = runs[r][1];
+            if (!isFinite(mw)) continue;
+            var pieces = [], cur2 = '';
+            for (var r2 = 0; r2 < runs.length; r2++) {
+              var val = runs[r2][0], c = Math.round(runs[r2][1] / mw);
+              if (c < 1) c = 1;
+              if (val === 0 && c > 5) { if (cur2) { pieces.push(cur2); cur2 = ''; } continue; }
+              for (var q = 0; q < c; q++) cur2 += val ? '1' : '0';
+            }
+            if (cur2) pieces.push(cur2);
+            for (var p = 0; p < pieces.length; p++) {
+              var P = pieces[p];
+              if (P.length > 400) continue;
+              if (P.length < 25) {
+                // pièces courtes : uniquement candidates MILIEU (un milieu de 1-2 chiffres EAN = 7-14 modules)
+                if (P.length < 11) continue;
+                if (!seen[P]) { seen[P] = 1; midsOnly.push({ b: P, mw: mw }); }
+                var rvs = revstr(P);
+                if (rvs !== P && !seen[rvs]) { seen[rvs] = 1; midsOnly.push({ b: rvs, mw: mw }); }
+                continue;
+              }
+              if (seen[P]) continue;
+              seen[P] = 1;
+              tornClassify(P, mw, heads, tails, all);
+              var rv = revstr(P);
+              if (rv !== P && !seen[rv]) { seen[rv] = 1; tornClassify(rv, mw, heads, tails, all); }
+            }
+          }
+          for (var a = 0; a < heads.length && !res; a++) {
+            for (var b = 0; b < tails.length; b++) {
+              if (tails[b] === heads[a]) { res = tornTry(heads[a].b, ''); break; }
+            }
+          }
+          // ====== 3 MORCEAUX : tête + milieu + queue ======
+          if (!res && heads.length && tails.length && (all.length + midsOnly.length) >= 3) {
+            var allM = all.concat(midsOnly.slice(0, 20));
+            var tries = 0;
+            for (var h3 = 0; h3 < heads.length && !res && tries < 300; h3++) {
+              for (var t3 = 0; t3 < tails.length && !res && tries < 300; t3++) {
+                if (tails[t3] === heads[h3]) continue;
+                var mxHT = Math.max(heads[h3].mw, tails[t3].mw);
+                if (Math.abs(heads[h3].mw - tails[t3].mw) / mxHT > 0.45) continue;
+                for (var m3 = 0; m3 < allM.length && !res && tries < 300; m3++) {
+                  var mid = allM[m3];
+                  if (mid === heads[h3] || mid === tails[t3]) continue;
+                  var mxM = Math.max(mid.mw, heads[h3].mw);
+                  if (Math.abs(mid.mw - heads[h3].mw) / mxM > 0.45) continue;
+                  mxM = Math.max(mid.mw, tails[t3].mw);
+                  if (Math.abs(mid.mw - tails[t3].mw) / mxM > 0.45) continue;
+                  tries++;
+                  res = tornTry(heads[h3].b, tails[t3].b, mid.b);
+                }
+              }
+            }
+          }
+        }
+
+          for (var a2 = 0; a2 < heads.length && !res; a2++) {
+            for (var b2 = 0; b2 < tails.length && !res; b2++) {
+              if (tails[b2] === heads[a2]) continue;
+              var mx = Math.max(heads[a2].mw, tails[b2].mw);
+              if (Math.abs(heads[a2].mw - tails[b2].mw) / mx > 0.45) continue;
+              res = tornTry(heads[a2].b, tails[b2].b);
+            }
+          }
+        return res;
+      } catch (e) { return null; }
+    }
+    return { try: tornTry, fromImage: tornFromImage, PAT: PAT, EANL: EANL, EANG: EANG, EANR: EANR, EANPAR: EANPAR };
+  })();
+    var tornFromImage = tornApi.fromImage;
+
     // ========== CAMÉRA ==========
     async function startCamera() {
       if (scanning) return;
@@ -1140,6 +1811,7 @@
         $("vf-frame").classList.add("detected");
         $("vf-hint").textContent = "🎯 Code repéré — ne bougez plus";
         lastDetections.push(found.rawValue);
+        tornMiss = 0;
         if (lastDetections.length > 6) lastDetections.shift();
 
         // vote si plusieurs lectures
@@ -1185,6 +1857,25 @@
         $("vf-frame").classList.remove("detected");
         if (!isSharp) $("vf-hint").textContent = "🖐️ Image floue ou instable";
         else $("vf-hint").textContent = "Cadre le code dans le rectangle";
+        // code d\u00E9chir\u00E9 : toutes les ~30 frames nettes sans d\u00E9tection, on tente la reconstitution
+        if (isSharp && !tornBusy) {
+          tornMiss++;
+          if (tornMiss >= 30) {
+            tornMiss = 0; tornBusy = true;
+            var fr = bestFrame || c;
+            setTimeout(function () {
+              var tr2 = null;
+              try { tr2 = tornFromImage(fr); } catch (_) {}
+              tornBusy = false;
+              if (tr2 && tr2.value && scanning) {
+                var rep3 = repairValue(tr2.value);
+                var fmt3 = tr2.format === 'EAN13' ? 'ean_13' : 'code_128';
+                if (scanMode === "single") stopCamera();
+                showResult(rep3.value, fmt3, rep3.note || ("\u{1F527} Code d\u00E9chir\u00E9 reconstitu\u00E9 (" + (tr2.how || '2-3 morceaux') + ")"), checkValue(rep3.value, fmt3), fr);
+              }
+            }, 0);
+          }
+        }
       }
 
       // cadence adaptative
@@ -1783,10 +2474,18 @@
           const repaired = repairValue(found.rawValue);
           showResult(repaired.value, found.format, repaired.note || "📷 depuis photo", checkValue(repaired.value), c);
         } else {
+          var tr = null;
+          try { tr = tornFromImage(c); } catch (_) {}
+          if (tr && tr.value) {
+            const repaired3 = repairValue(tr.value);
+            showResult(repaired3.value, tr.format === 'EAN13' ? 'ean_13' : 'code_128', repaired3.note || ("\u{1F527} Code d\u00E9chir\u00E9 reconstitu\u00E9 (" + (tr.how || '2-3 morceaux') + ")"), checkValue(repaired3.value, tr.format === 'EAN13' ? 'ean_13' : 'code_128'), c);
+          } else {
           toast("Aucun code détecté — essaie OCR ou rapproche");
           $("ocr-status").style.display = "block";
           $("ocr-status").textContent = "Aucun code détecté automatiquement. Tu peux lancer l’OCR.";
-        }
+        
+          }
+}
       };
       img.src = URL.createObjectURL(file);
     }
