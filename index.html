@@ -1684,9 +1684,168 @@ var tornApi = (function () {
         return res;
       } catch (e) { return null; }
     }
-    return { try: tornTry, fromImage: tornFromImage, PAT: PAT, EANL: EANL, EANG: EANG, EANR: EANR, EANPAR: EANPAR };
+    /* ====== EXTENSION V37 : FUSION numéro imprimé (OCR) x fragments de bandes ====== */
+    function tornEanKey(d12) {
+      var s = 0;
+      for (var i = 0; i < 12; i++) s += d12.charAt(i) * (i % 2 ? 3 : 1);
+      return '' + ((10 - s % 10) % 10);
+    }
+    function tornEanPattern(v) {
+      var d = ('' + v).replace(/\D/g, '');
+      if (d.length === 12) d += tornEanKey(d);
+      if (d.length !== 13) return null;
+      var dg = [];
+      for (var z = 0; z < 13; z++) { var cz = d.charCodeAt(z); if (cz < 48 || cz > 57) return null; dg.push(cz - 48); }
+      var par = EANPAR[dg[0]]; if (!par) return null;
+      var s = '101';
+      for (var i = 1; i <= 6; i++) s += (par.charAt(i - 1) === 'L' ? EANL : EANG)[dg[i]];
+      s += '01010';
+      for (var j = 7; j <= 12; j++) s += EANR[dg[j]];
+      return s + '101';
+    }
+    function tornC128Pattern(v) {
+      if (!v || !v.length || v.length > 40) return null;
+      var syms = [104], sum = 104;
+      for (var k = 0; k < v.length; k++) {
+        var c = v.charCodeAt(k);
+        if (c < 32 || c > 126) return null;
+        syms.push(c - 32);
+        sum += (c - 32) * (k + 1);
+      }
+      syms.push(sum % 103);
+      var s = '';
+      for (var q = 0; q < syms.length; q++) s += PAT[syms[q]];
+      return s + PAT[106];
+    }
+    function tornMatchPieces(pieces, pat) {
+      if (!pat || pat.length < 30) return { ok: false, n: 0, modules: 0, pieces: [] };
+      var rp = revstr(pat), seenP = {}, matched = [], cnt = 0, tot = 0;
+      for (var i = 0; i < pieces.length; i++) {
+        var b = pieces[i];
+        if (!b || b.length < 11 || b.length > pat.length) continue;
+        if (seenP[b] || seenP[revstr(b)]) continue;
+        var pos = pat.indexOf(b), rpos = rp.indexOf(b);
+        if (pos < 0 && rpos < 0) continue;
+        seenP[b] = 1;
+        cnt++; tot += b.length;
+        matched.push({ b: b, pos: pos >= 0 ? pos : pat.length - rpos - b.length });
+      }
+      matched.sort(function (a, b2) { return a.pos - b2.pos; });
+      var ok = (cnt >= 2 && tot >= 30 && tot >= pat.length * 0.25) || tot >= Math.max(30, pat.length * 0.3);
+      var out = []; for (var m = 0; m < matched.length; m++) out.push(matched[m].b);
+      return { ok: ok, n: cnt, modules: tot, pieces: out };
+    }
+    function tornScanPieces(img) {
+      // réextraction des fragments (même binarisation que tornFromImage), sans résolution
+      var iw = img.width || 300, ih = img.height || 300;
+      var ratio = Math.min(1, 900 / Math.max(iw, ih));
+      var w = Math.max(40, Math.round(iw * ratio)), h = Math.max(40, Math.round(ih * ratio));
+      var cv = document.createElement('canvas'); cv.width = w; cv.height = h;
+      var cx = cv.getContext('2d'); cx.drawImage(img, 0, 0, w, h);
+      var dd = cx.getImageData(0, 0, w, h).data;
+      var n = w * h, gr = new Array(n), i;
+      for (i = 0; i < n; i++) gr[i] = (dd[i * 4] * 299 + dd[i * 4 + 1] * 587 + dd[i * 4 + 2] * 114) / 1000;
+      var hist = new Array(256); for (i = 0; i < 256; i++) hist[i] = 0;
+      for (i = 0; i < n; i++) { var gi = gr[i]; gi = gi < 0 ? 0 : gi > 255 ? 255 : gi; hist[gi | 0]++; }
+      var sum = 0; for (i = 0; i < 256; i++) sum += i * hist[i];
+      var sumB = 0, wB = 0, bestv = 0, th = 128;
+      for (i = 0; i < 256; i++) {
+        wB += hist[i]; if (!wB) continue;
+        sumB += i * hist[i];
+        var mB = sumB / wB, mF = (sum - sumB) / (n - wB);
+        var v = wB * (n - wB) * (mB - mF) * (mB - mF);
+        if (v > bestv) { bestv = v; th = i; }
+      }
+      var bin = new Array(n);
+      for (i = 0; i < n; i++) bin[i] = gr[i] < th ? 1 : 0;
+      var pcs = [], seen = {};
+      for (var ori = 0; ori < 2; ori++) {
+        var nLines = ori === 0 ? h : w, segLen = ori === 0 ? w : h;
+        for (var li = 0; li < nLines; li += 2) {
+          var runs = [], cur = -1, cnt2 = 0, x;
+          for (x = 0; x < segLen; x++) {
+            var v2 = ori === 0 ? bin[li * w + x] : bin[x * w + li];
+            if (v2 === cur) cnt2++;
+            else { if (cur >= 0) runs.push([cur, cnt2]); cur = v2; cnt2 = 1; }
+          }
+          if (cur >= 0) runs.push([cur, cnt2]);
+          while (runs.length && runs[0][0] === 0) runs.shift();
+          while (runs.length && runs[runs.length - 1][0] === 0) runs.pop();
+          var trans = 0;
+          for (var t = 1; t < runs.length; t++) if (runs[t][0] !== runs[t - 1][0]) trans++;
+          if (runs.length < 8 || trans < 7) continue;
+          var mw = Infinity;
+          for (var r = 0; r < runs.length; r++) if (runs[r][0] === 1 && runs[r][1] >= 2 && runs[r][1] < mw) mw = runs[r][1];
+          if (!isfinite_ok(mw)) continue;
+          var pieces = [], cur2 = '';
+          for (var r2 = 0; r2 < runs.length; r2++) {
+            var val = runs[r2][0], c3 = Math.round(runs[r2][1] / mw);
+            if (c3 < 1) c3 = 1;
+            if (val === 0 && c3 > 5) { if (cur2) { pieces.push(cur2); cur2 = ''; } continue; }
+            for (var q2 = 0; q2 < c3; q2++) cur2 += val ? '1' : '0';
+          }
+          if (cur2) pieces.push(cur2);
+          for (var p = 0; p < pieces.length; p++) {
+            var P = pieces[p];
+            if (P.length < 11 || P.length > 400) continue;
+            if (!seen[P]) { seen[P] = 1; pcs.push(P); }
+            var rv3 = revstr(P);
+            if (rv3 !== P && !seen[rv3]) { seen[rv3] = 1; pcs.push(rv3); }
+          }
+        }
+      }
+      return pcs;
+    }
+    function isfinite_ok(mw) { return isFinite(mw); }
+    function tornEanChkOk(d13) {
+      var s = 0;
+      for (var i = 0; i < 12; i++) s += d13.charAt(i) * (i % 2 ? 3 : 1);
+      return ((10 - s % 10) % 10) === (d13.charCodeAt(12) - 48);
+    }
+    // arbitrage entre candidats OCR : le candidat qui explique le plus de modules de fragments gagne ;
+    // petit bonus si sa clé de contrôle est valide (EAN)
+    function tornBestCandidate(pats, pcs) {
+      var best = null;
+      for (var q = 0; q < pats.length; q++) {
+        var m2 = tornMatchPieces(pcs, pats[q].p);
+        if (!m2.ok) continue;
+        var score = m2.modules + (pats[q].chk ? 6 : 0);
+        if (!best || score > best.score) best = { value: pats[q].value, format: pats[q].format, pieces: m2.pieces, matched: m2.n, modules: m2.modules, score: score };
+      }
+      return best;
+    }
+    function tornMatchImage(img, values) {
+      try {
+        if (!values || !values.length || values.length > 10) return null;
+        var pats = [];
+        for (var v = 0; v < values.length && pats.length < 10; v++) {
+          var val = ('' + (values[v] || '')).trim();
+          if (!val) continue;
+          var dg = val.replace(/\D/g, '');
+          if (dg.length === 12) { var p1 = tornEanPattern(dg); if (p1) pats.push({ p: p1, value: dg + tornEanKey(dg), format: 'EAN13', chk: true }); }
+          else if (dg.length === 13 && /^\d+$/.test(val)) {
+            var p2 = tornEanPattern(dg);
+            if (p2) {
+              pats.push({ p: p2, value: dg, format: 'EAN13', chk: tornEanChkOk(dg) });
+              // clé invalide → l'OCR a peut-être mal lu la clé : essayer le préfixe 12 chiffres avec clé recalculée
+              if (!tornEanChkOk(dg)) { var p2b = tornEanPattern(dg.slice(0, 12)); if (p2b && p2b !== p2) pats.push({ p: p2b, value: dg.slice(0, 12) + tornEanKey(dg.slice(0, 12)), format: 'EAN13', chk: true }); }
+            }
+          }
+          if (val.length >= 3 && val.length <= 40) {
+            var p3 = tornC128Pattern(val);
+            if (p3) pats.push({ p: p3, value: val, format: 'CODE128', chk: true });
+          }
+        }
+        if (!pats.length) return null;
+        var pcs = tornScanPieces(img);
+        if (!pcs.length) return null;
+        var best = tornBestCandidate(pats, pcs);
+        return best ? { value: best.value, format: best.format, how: best.format === 'EAN13' ? 'EAN-13 · OCR + fragments' : 'Code 128 · OCR + fragments', pieces: best.pieces, matched: best.matched, modules: best.modules } : null;
+      } catch (e) { return null; }
+    }
+    return { try: tornTry, fromImage: tornFromImage, matchImage: tornMatchImage, eanPattern: tornEanPattern, c128Pattern: tornC128Pattern, matchPieces: tornMatchPieces, bestCandidate: tornBestCandidate, eanChkOk: tornEanChkOk, eanKey: tornEanKey, PAT: PAT, EANL: EANL, EANG: EANG, EANR: EANR, EANPAR: EANPAR };
   })();
-    var tornFromImage = tornApi.fromImage;
+var tornFromImage = tornApi.fromImage;
 var tornFromImage = tornApi.fromImage;
     // ====== ANIMATION « LE CODE DÉCHIRÉ SE REFORME » (V36) ======
     var tornAnimOpen = false;
@@ -1795,6 +1954,56 @@ var tornFromImage = tornApi.fromImage;
       } catch (e) { go(); }
     }
 
+
+    // ====== V37 : FUSION — numéro imprimé (OCR) x fragments de bandes ======
+    // Julien : code-barres avec 3-5 bandes détruites MAIS numéro imprimé lisible dessous.
+    // L'OCR lit le numéro imprimé, puis les fragments de bandes visibles sur la photo
+    // CONFIRMENT (ou infirment) ce numéro avant de régénérer. Jamais de confirmation sans preuve.
+    var fusionBusy = false;
+    async function fusionRepair(c) {
+      if (fusionBusy) return false;
+      fusionBusy = true;
+      var st = $("ocr-status");
+      try {
+        st.style.display = "block";
+        st.textContent = "🔗 Fusion : lecture du numéro imprimé (OCR)…";
+        if (typeof Tesseract === "undefined") { st.textContent = "OCR non chargé — vérifie la connexion"; fusionBusy = false; return false; }
+        if (!ocrWorker) {
+          st.textContent = "OCR : téléchargement du moteur (~10 Mo, première fois seulement)…";
+          ocrWorker = await Tesseract.createWorker("fra+eng");
+        }
+        const { data: { text } } = await ocrWorker.recognize(c);
+        // candidats : séries de 12-13 chiffres (EAN-13, espaces internes retirés) + tokens alphanumériques (Code 128)
+        var flat = (text || "").replace(/\s+/g, " ");
+        var cands = [];
+        var push = function (x2) { if (x2 && cands.indexOf(x2) < 0 && cands.length < 8) cands.push(x2); };
+        var digitsOnly = flat.replace(/ /g, "");
+        (digitsOnly.match(/\d{12,13}/g) || []).forEach(push);
+        (flat.match(/\d{12,13}/g) || []).forEach(push);
+        var tokens = (flat.match(/[A-Za-z0-9\-\.\+\/\$%]{3,40}/g) || []).sort(function (a, b) { return b.length - a.length; });
+        tokens.slice(0, 3).forEach(function (t2) { push(t2.toUpperCase()); });
+        if (!cands.length) { st.textContent = "OCR : aucun numéro imprimé lisible sur la photo"; fusionBusy = false; return false; }
+        var fm = null;
+        try { fm = tornApi.matchImage(c, cands); } catch (_) {}
+        if (fm && fm.value) {
+          st.textContent = "🔗 Fusion réussie : numéro imprimé confirmé par " + fm.matched + " fragment(s) de bandes";
+          var repF = repairValue(fm.value);
+          var fmtF = fm.format === "EAN13" ? "ean_13" : "code_128";
+          tornAnimate(fm, function () {
+            showResult(repF.value, fmtF, repF.note || ("🔗 Numéro imprimé (OCR) + bandes visibles croisées (" + fm.matched + " fragments)"), checkValue(repF.value, fmtF), c);
+          });
+          fusionBusy = false;
+          return true;
+        }
+        st.textContent = "OCR : numéro lu (" + (cands[0] || "") + ") mais bandes non concordantes — prends la photo plus droite/nette";
+        fusionBusy = false;
+        return false;
+      } catch (e) {
+        try { st.textContent = "Fusion échouée : " + (e.message || e); } catch (_) {}
+        fusionBusy = false;
+        return false;
+      }
+    }
 
     // ========== CAMÉRA ==========
     async function startCamera() {
@@ -2595,10 +2804,13 @@ var tornFromImage = tornApi.fromImage;
               showResult(repaired3.value, fmt3, repaired3.note || ("\u{1F527} Code d\u00E9chir\u00E9 reconstitu\u00E9 (" + (tr.how || '2-3 morceaux') + ")"), checkValue(repaired3.value, fmt3), c);
             });
           } else {
-          toast("Aucun code détecté — essaie OCR ou rapproche");
-          $("ocr-status").style.display = "block";
-          $("ocr-status").textContent = "Aucun code détecté automatiquement. Tu peux lancer l’OCR.";
-        
+            // V37 : fusion OCR x fragments avant d'abandonner
+            var okFusion = false;
+            try { okFusion = await fusionRepair(c); } catch (_) {}
+            if (!okFusion) {
+              toast("Aucun code détecté — essaie OCR ou rapproche");
+              $("ocr-status").style.display = "block";
+            }
           }
 }
       };
