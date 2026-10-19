@@ -1665,6 +1665,7 @@ var tornApi = (function () {
                   if (Math.abs(mid.mw - tails[t3].mw) / mxM > 0.45) continue;
                   tries++;
                   res = tornTry(heads[h3].b, tails[t3].b, mid.b);
+                  if (res) { res.pieces = [heads[h3].b, mid.b, tails[t3].b]; res.dir = 0; }
                 }
               }
             }
@@ -1677,6 +1678,7 @@ var tornApi = (function () {
               var mx = Math.max(heads[a2].mw, tails[b2].mw);
               if (Math.abs(heads[a2].mw - tails[b2].mw) / mx > 0.45) continue;
               res = tornTry(heads[a2].b, tails[b2].b);
+              if (res) { res.pieces = [heads[a2].b, tails[b2].b]; res.dir = 0; }
             }
           }
         return res;
@@ -1685,6 +1687,114 @@ var tornApi = (function () {
     return { try: tornTry, fromImage: tornFromImage, PAT: PAT, EANL: EANL, EANG: EANG, EANR: EANR, EANPAR: EANPAR };
   })();
     var tornFromImage = tornApi.fromImage;
+var tornFromImage = tornApi.fromImage;
+    // ====== ANIMATION « LE CODE DÉCHIRÉ SE REFORME » (V36) ======
+    var tornAnimOpen = false;
+    function tornPieceCanvas(bits, m, hgt) {
+      var cv = document.createElement("canvas");
+      cv.width = Math.max(1, bits.length * m);
+      cv.height = hgt;
+      var x = cv.getContext("2d");
+      x.fillStyle = "#ffffff"; x.fillRect(0, 0, cv.width, cv.height);
+      x.fillStyle = "#000000";
+      var p = 0;
+      while (p < bits.length) {
+        var ch = bits.charAt(p), q = p;
+        while (q < bits.length && bits.charAt(q) === ch) q++;
+        if (ch === "1") x.fillRect(p * m, 0, (q - p) * m, hgt);
+        p = q;
+      }
+      return cv;
+    }
+    // Affiche les morceaux détectés qui se rapprochent, fusionnent, puis le code complet restauré.
+    // Cosmétique uniquement : en cas de moindre problème → on passe directement au résultat.
+    function tornAnimate(tr, onDone) {
+      var go = function () { if (onDone) onDone(); };
+      try {
+        var pieces = (tr && tr.pieces ? tr.pieces : []).filter(function (p) { return p && p.length >= 7; });
+        if (tornAnimOpen || pieces.length < 2 || typeof bwipjs === "undefined") { go(); return; }
+        var m = 3, hgt = 64;
+        // code final régénéré
+        var final = document.createElement("canvas");
+        bwipjs.toCanvas(final, {
+          bcid: tr.format === "EAN13" ? "ean13" : "code128",
+          text: tr.value, scale: 3, includetext: true, textxalign: "center",
+          barcolor: "000000", backgroundcolor: "FFFFFF"
+        });
+        var totalW = 0;
+        for (var i = 0; i < pieces.length; i++) totalW += pieces[i].length * m;
+        // overlay
+        tornAnimOpen = true;
+        var ov = document.createElement("div");
+        ov.style.cssText = "position:fixed;inset:0;background:rgba(15,23,42,.9);z-index:99999;display:flex;align-items:center;justify-content:center;";
+        var card = document.createElement("div");
+        card.style.cssText = "background:#fff;border-radius:16px;padding:20px 26px;box-shadow:0 18px 60px rgba(0,0,0,.5);text-align:center;max-width:94vw;overflow:hidden;";
+        var title = document.createElement("div");
+        title.style.cssText = "font:600 15px/1.3 system-ui,sans-serif;margin-bottom:6px;color:#0f172a;";
+        title.textContent = "🔧 Code déchiré détecté — reformation…";
+        var count = document.createElement("div");
+        count.style.cssText = "font:12px system-ui,sans-serif;color:#64748b;margin-bottom:12px;";
+        count.textContent = pieces.length + " morceaux détectés sur la photo";
+        var stage = document.createElement("div");
+        stage.style.cssText = "position:relative;margin:0 auto;width:" + totalW + "px;height:" + (hgt + 24) + "px;transition:opacity .5s;";
+        var cvEls = [], off = 0;
+        for (var j = 0; j < pieces.length; j++) {
+          var pc = tornPieceCanvas(pieces[j], m, hgt);
+          pc.style.cssText = "position:absolute;left:" + off + "px;top:12px;border:1px solid #e2e8f0;box-sizing:border-box;transition:transform .9s cubic-bezier(.22,1,.36,1),opacity .5s;";
+          var dx = (j % 2 === 0 ? -1 : 1) * (70 + j * 46);
+          var dy = (j % 2 === 0 ? -1 : 1) * (14 + (j % 3) * 8);
+          var rot = (j % 2 === 0 ? -7 : 6) + j;
+          pc.style.transform = "translate(" + dx + "px," + dy + "px) rotate(" + rot + "deg)";
+          pc.style.opacity = "0";
+          stage.appendChild(pc);
+          cvEls.push(pc);
+          off += pieces[j].length * m;
+        }
+        var finalWrap = document.createElement("div");
+        finalWrap.style.cssText = "opacity:0;transition:opacity .6s;position:absolute;left:50%;top:0;transform:translateX(-50%);max-width:100%;";
+        final.style.cssText = "max-width:100%;height:auto;";
+        finalWrap.appendChild(final);
+        var valTxt = document.createElement("div");
+        valTxt.style.cssText = "font:600 15px system-ui,sans-serif;color:#059669;margin-top:8px;";
+        valTxt.textContent = "✅ Code restauré : " + tr.value;
+        finalWrap.appendChild(valTxt);
+        var stageBox = document.createElement("div");
+        stageBox.style.cssText = "position:relative;width:" + Math.max(totalW, 260) + "px;height:" + (hgt + 24) + "px;margin:0 auto;";
+        stageBox.appendChild(stage);
+        stageBox.appendChild(finalWrap);
+        var hint = document.createElement("div");
+        hint.style.cssText = "font:12px system-ui,sans-serif;color:#94a3b8;margin-top:12px;";
+        hint.textContent = "Fusion des morceaux + clé de contrôle";
+        card.appendChild(title);
+        card.appendChild(count);
+        card.appendChild(stageBox);
+        card.appendChild(hint);
+        ov.appendChild(card);
+        document.body.appendChild(ov);
+        var close = function () {
+          tornAnimOpen = false;
+          if (ov.parentNode) ov.parentNode.removeChild(ov);
+          go();
+        };
+        // 1) apparition des morceaux éparpillés
+        setTimeout(function () {
+          for (var k = 0; k < cvEls.length; k++) { cvEls[k].style.opacity = "1"; }
+        }, 60);
+        // 2) fusion : les morceaux se rapprochent et s'alignent (le résultat = le vrai code)
+        setTimeout(function () {
+          for (var k2 = 0; k2 < cvEls.length; k2++) { cvEls[k2].style.transform = "none"; }
+        }, 950);
+        // 3) le code complet restauré remplace les morceaux
+        setTimeout(function () {
+          stage.style.opacity = "0";
+          finalWrap.style.opacity = "1";
+          count.textContent = tr.format === "EAN13" ? "EAN-13 reconstitué (2-3 morceaux)" : "Code 128 reconstitué (2-3 morceaux)";
+        }, 2100);
+        // 4) fin
+        setTimeout(close, 3600);
+      } catch (e) { go(); }
+    }
+
 
     // ========== CAMÉRA ==========
     async function startCamera() {
@@ -1871,7 +1981,9 @@ var tornApi = (function () {
                 var rep3 = repairValue(tr2.value);
                 var fmt3 = tr2.format === 'EAN13' ? 'ean_13' : 'code_128';
                 if (scanMode === "single") stopCamera();
-                showResult(rep3.value, fmt3, rep3.note || ("\u{1F527} Code d\u00E9chir\u00E9 reconstitu\u00E9 (" + (tr2.how || '2-3 morceaux') + ")"), checkValue(rep3.value, fmt3), fr);
+                tornAnimate(tr2, function () {
+                  showResult(rep3.value, fmt3, rep3.note || ("\u{1F527} Code d\u00E9chir\u00E9 reconstitu\u00E9 (" + (tr2.how || '2-3 morceaux') + ")"), checkValue(rep3.value, fmt3), fr);
+                });
               }
             }, 0);
           }
@@ -2478,7 +2590,10 @@ var tornApi = (function () {
           try { tr = tornFromImage(c); } catch (_) {}
           if (tr && tr.value) {
             const repaired3 = repairValue(tr.value);
-            showResult(repaired3.value, tr.format === 'EAN13' ? 'ean_13' : 'code_128', repaired3.note || ("\u{1F527} Code d\u00E9chir\u00E9 reconstitu\u00E9 (" + (tr.how || '2-3 morceaux') + ")"), checkValue(repaired3.value, tr.format === 'EAN13' ? 'ean_13' : 'code_128'), c);
+            const fmt3 = tr.format === 'EAN13' ? 'ean_13' : 'code_128';
+            tornAnimate(tr, function () {
+              showResult(repaired3.value, fmt3, repaired3.note || ("\u{1F527} Code d\u00E9chir\u00E9 reconstitu\u00E9 (" + (tr.how || '2-3 morceaux') + ")"), checkValue(repaired3.value, fmt3), c);
+            });
           } else {
           toast("Aucun code détecté — essaie OCR ou rapproche");
           $("ocr-status").style.display = "block";

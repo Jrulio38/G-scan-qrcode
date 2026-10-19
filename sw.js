@@ -1,4 +1,4 @@
-const CACHE_NAME = "g-scan-codeforge-v35";
+const CACHE_NAME = "g-scan-codeforge-v36";
 const ASSETS = ["./", "./index.html", "./manifest.json", "./icon.svg"];
 
 self.addEventListener("install", (e) => {
