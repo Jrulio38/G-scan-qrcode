@@ -1287,43 +1287,72 @@
     // ========== PRODUIT (Open Food Facts etc.) ==========
     async function lookupProduct(code) {
       const zone = $("product-info");
-      zone.style.display = "none";
-      zone.innerHTML = "";
 
       const digits = String(code).replace(/\D/g, "");
       if (digits.length < 8 || digits.length > 14) return;
+      zone.style.display = "block";
 
-      // ISBN ?
+      // ISBN ? → livre : Google Books PUIS Open Library (Google refuse parfois les requêtes gratuites)
       if (/^978|^979/.test(digits) && digits.length === 13) {
+        zone.innerHTML = "📚 <b>Livre reconnu</b> — ISBN " + digits + "<br><span class='hint'>Recherche de la fiche…</span>";
         try {
           const r = await fetch(`https://www.googleapis.com/books/v1/volumes?q=isbn:${digits}&country=FR`);
-          const j = await r.json();
-          if (j.items && j.items[0]) {
-            const b = j.items[0].volumeInfo;
-            zone.style.display = "block";
-            zone.innerHTML = `<b>📚 ${b.title || "Livre"}</b><br>` +
-              (b.authors ? b.authors.join(", ") + "<br>" : "") +
-              (b.publisher ? b.publisher + " · " : "") + (b.publishedDate || "") +
-              (b.imageLinks && b.imageLinks.thumbnail ? `<img src="${b.imageLinks.thumbnail}" alt="">` : "");
+          if (r.ok) {
+            const j = await r.json();
+            if (j.items && j.items[0]) {
+              const b = j.items[0].volumeInfo;
+              zone.innerHTML = "📚 <b>Type : Livre (ISBN " + digits + ")</b><br>" +
+                "<b>" + (b.title || "Livre") + "</b><br>" +
+                (b.authors ? "✍️ " + b.authors.join(", ") + "<br>" : "") +
+                (b.publisher ? "🏢 " + b.publisher + " · " : "") + (b.publishedDate || "") +
+                (b.pageCount ? "<br>📄 " + b.pageCount + " pages" : "") +
+                (b.description ? "<br><span class='hint'>" + String(b.description).slice(0, 200) + "…</span>" : "") +
+                (b.imageLinks && b.imageLinks.thumbnail ? "<br><img src=\"" + b.imageLinks.thumbnail + "\" alt=\"\">" : "") +
+                "<br><a href=\"https://www.google.com/search?q=" + digits + "\" target=\"_blank\" rel=\"noopener\" style=\"color:#22d3ee\">🔎 Rechercher ce livre sur le web</a>";
+              return;
+            }
+          }
+        } catch (_) {}
+        // Repli Open Library
+        try {
+          const r2 = await fetch(`https://openlibrary.org/api/books?bibkeys=ISBN:${digits}&jscmd=data&format=json`);
+          const j2 = await r2.json();
+          const d = j2 && j2["ISBN:" + digits];
+          if (d && (d.title || d.authors)) {
+            const aut = (d.authors || []).map(a => a.name).join(", ");
+            const pub = (d.publishers || []).map(p => p.name).join(", ");
+            zone.innerHTML = "📚 <b>Type : Livre (ISBN " + digits + ")</b><br>" +
+              "<b>" + (d.title || "Livre") + "</b><br>" +
+              (aut ? "✍️ " + aut + "<br>" : "") +
+              (pub ? "🏢 " + pub + (d.publish_date ? " · " + d.publish_date : "") + "<br>" : "") +
+              (d.number_of_pages ? "📄 " + d.number_of_pages + " pages<br>" : "") +
+              (d.cover && (d.cover.small || d.cover.medium) ? "<img src=\"" + (d.cover.medium || d.cover.small) + "\" alt=\"\">" : "") +
+              "<br><span class='hint'>Source : Open Library</span><br>" +
+              "<a href=\"https://www.google.com/search?q=" + digits + "\" target=\"_blank\" rel=\"noopener\" style=\"color:#22d3ee\">🔎 Rechercher ce livre sur le web</a>";
             return;
           }
         } catch (_) {}
+        zone.innerHTML = "📚 <b>Type : Livre (ISBN " + digits + ")</b><br>" +
+          "<span class='hint'>Fiche introuvable dans les bases gratuites (Google Books et Open Library) — le code est bien lu.</span><br>" +
+          "<a href=\"https://www.google.com/search?q=" + digits + "\" target=\"_blank\" rel=\"noopener\" style=\"color:#22d3ee\">🔎 Rechercher ce livre sur le web</a> · " +
+          "<a href=\"https://www.google.com/search?tbm=shop&q=" + digits + "\" target=\"_blank\" rel=\"noopener\" style=\"color:#22d3ee\">🛒 Prix / achat</a>";
+        return;
       }
 
-      // Open Food Facts → Beauty → Products
+      // Open Food Facts → Beauty → Products (alimentaire, cosmétique, ménager, bricolage, jardinage, jeux…)
+      zone.innerHTML = "📦 <b>Type : produit (code " + digits + ")</b><br><span class='hint'>Recherche de la fiche…</span>";
       const apis = [
-        `https://world.openfoodfacts.org/api/v2/product/${digits}.json`,
-        `https://world.openbeautyfacts.org/api/v2/product/${digits}.json`,
-        `https://world.openproductsfacts.org/api/v2/product/${digits}.json`
+        { u: `https://world.openfoodfacts.org/api/v2/product/${digits}.json`, s: "Open Food Facts" },
+        { u: `https://world.openbeautyfacts.org/api/v2/product/${digits}.json`, s: "Open Beauty Facts" },
+        { u: `https://world.openproductsfacts.org/api/v2/product/${digits}.json`, s: "Open Products Facts" }
       ];
-      for (const url of apis) {
+      for (const api of apis) {
         try {
-          const r = await fetch(url);
+          const r = await fetch(api.u);
           const j = await r.json();
           if (j.status === 1 && j.product) {
             const p = j.product;
-            zone.style.display = "block";
-            let html = "";
+            let html = "📦 <b>Type : produit (code " + digits + ")</b><br>";
             if (p.image_front_small_url) html += `<img src="${p.image_front_small_url}" alt="">`;
             html += `<b>${p.product_name || p.generic_name || "Produit"}</b><br>`;
             if (p.brands) html += p.brands + "<br>";
@@ -1340,6 +1369,7 @@
               const ing = (p.ingredients_text_fr || p.ingredients_text || "").slice(0, 180);
               html += `<span class="hint">Composition : ${ing}${ing.length >= 180 ? "…" : ""}</span><br>`;
             }
+            html += `<span class='hint'>Source : ${api.s}</span><br>`;
             html += `<a href="https://fr.openfoodfacts.org/produit/${digits}" target="_blank" rel="noopener" style="color:#22d3ee">Fiche complète</a> · `;
             html += `<a href="https://www.google.com/search?tbm=shop&q=${digits}" target="_blank" rel="noopener" style="color:#22d3ee">Prix / achat</a> · `;
             html += `<a href="https://www.google.com/search?q=${encodeURIComponent((p.product_name || "") + " avis")}" target="_blank" rel="noopener" style="color:#22d3ee">Avis clients</a>`;
@@ -1348,6 +1378,11 @@
           }
         } catch (_) {}
       }
+      // Produit bien lu mais inconnu des bases gratuites → on l'affiche quand même avec des recherches web
+      zone.innerHTML = "📦 <b>Type : produit (code " + digits + ")</b><br>" +
+        "<span class='hint'>Produit bien lu mais inconnu des bases gratuites (Open Food / Beauty / Products Facts) — c'est le fabricant ou des bénévoles qui y ajoutent les fiches, et celle-ci manque.</span><br>" +
+        "<a href=\"https://www.google.com/search?tbm=shop&q=" + digits + "\" target=\"_blank\" rel=\"noopener\" style=\"color:#22d3ee\">🛒 Chercher ce produit à vendre</a> · " +
+        "<a href=\"https://www.google.com/search?q=" + digits + "\" target=\"_blank\" rel=\"noopener\" style=\"color:#22d3ee\">🔎 Rechercher ce code sur le web</a>";
     }
 
     // ========== GÉNÉRATION ==========
