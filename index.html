@@ -15,6 +15,8 @@
   <script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.3/lib/browser.min.js" onerror="this.onerror=null;document.write(String.fromCharCode(60)+String.fromCharCode(115)+String.fromCharCode(99)+'ript src="https://unpkg.com/qrcode@1.5.3/lib/browser.min.js">'+String.fromCharCode(60)+String.fromCharCode(47)+'script>')"></script>
   <script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.6/dist/JsBarcode.all.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/bwip-js@4.3.0/dist/bwip-js-min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@zxing/library@0.21.3/umd/index.min.js"></script>
+<script src="https://unpkg.com/@zxing/library@0.21.3/umd/index.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js"></script>
   <script>
     (function () {
@@ -1187,6 +1189,7 @@
 
     function stopCamera() {
       stopScanLoop();
+      engineReset();
       if (liveStream) {
         liveStream.getTracks().forEach(t => { try { t.stop(); } catch(e){} });
         liveStream = null;
@@ -1271,7 +1274,8 @@
       return document.querySelector("#reader video");
     }
     function stopScanLoop() {
-      if (scanTimer) { clearInterval(scanTimer); scanTimer = null; }
+      if (scanTimer) { try { clearTimeout(scanTimer); } catch(e){} try { clearInterval(scanTimer); } catch(e){} scanTimer = null; }
+      resetCandidates();
     }
     async function waitForDetector(ms) {
       if ("BarcodeDetector" in window) return true;
@@ -1281,25 +1285,341 @@
       }
       return "BarcodeDetector" in window;
     }
+    /* ============ MOTEUR V3 TRANSPLANTÉ : STABILISATEUR + ZXING + FILTRE COULEURS + RÉPARATION ============ */
+    let zxCanvasA = null, zxCanvasB = null, mfrReader = null;
+    function getZxCanvas() { if (!zxCanvasA) zxCanvasA = document.createElement("canvas"); return zxCanvasA; }
+    function getZxCanvas2() { if (!zxCanvasB) zxCanvasB = document.createElement("canvas"); return zxCanvasB; }
+    function fmtName(f) {
+      if (!window.ZXing) return "" + f;
+      for (const k in ZXing.BarcodeFormat) if (ZXing.BarcodeFormat[k] === f) return k;
+      return "" + f;
+    }
+    function getReader() {
+      if (mfrReader || !window.ZXing) return mfrReader;
+      try {
+        const BF = ZXing.BarcodeFormat;
+        const fmts = [BF.EAN_13, BF.EAN_8, BF.UPC_A, BF.UPC_E, BF.CODE_128, BF.CODE_39,
+          BF.CODE_93, BF.ITF, BF.QR_CODE, BF.CODABAR, BF.DATA_MATRIX, BF.PDF_417];
+        const hints = new Map();
+        hints.set(ZXing.DecodeHintType.POSSIBLE_FORMATS, fmts);
+        hints.set(ZXing.DecodeHintType.TRY_HARDER, true);
+        mfrReader = new ZXing.MultiFormatReader();
+        mfrReader.setHints(hints);
+      } catch(e) { mfrReader = null; }
+      return mfrReader;
+    }
+    function zxDecodeLs(ls) {
+      const r = getReader().decode(new ZXing.BinaryBitmap(new ZXing.HybridBinarizer(ls)));
+      return { text: r.getText(), format: fmtName(r.getBarcodeFormat()) };
+    }
+    /* FILTRE COULEURS (V3) : gomme les feutres/stylos/tampons colorés qui recouvrent le code */
+    function colorFilterCanvas(src, coloredTo) {
+      const w = src.videoWidth || src.naturalWidth || src.width;
+      const h = src.videoHeight || src.naturalHeight || src.height;
+      if (!w || !h) return null;
+      const scale = Math.min(1, 1200 / Math.max(w, h));
+      const c = getZxCanvas(); c.width = Math.max(1, Math.round(w * scale)); c.height = Math.max(1, Math.round(h * scale));
+      const ctx = c.getContext("2d", { willReadFrequently: true });
+      ctx.drawImage(src, 0, 0, c.width, c.height);
+      const img = ctx.getImageData(0, 0, c.width, c.height);
+      const d = img.data;
+      const mins = []; let mn, mx, sat, g, mnAll = 255, mxAll = 0;
+      for (let i = 0; i < d.length; i += 4) {
+        mn = Math.min(d[i], d[i+1], d[i+2]); mx = Math.max(d[i], d[i+1], d[i+2]);
+        sat = mx - mn;
+        if (sat > 60) {
+          if (coloredTo === "white") { d[i]=255; d[i+1]=255; d[i+2]=255; d[i+3]=255; mins.push(255); }
+          else { d[i]=0; d[i+1]=0; d[i+2]=0; d[i+3]=255; mins.push(0); }
+        } else {
+          g = Math.round(0.299*d[i] + 0.587*d[i+1] + 0.114*d[i+2]);
+          d[i]=g; d[i+1]=g; d[i+2]=g; d[i+3]=255; mins.push(g);
+          if (g < mnAll) mnAll = g; if (g > mxAll) mxAll = g;
+        }
+      }
+      const range = mxAll - mnAll;
+      for (let i = 0, p = 0; i < d.length; i += 4, p++) {
+        let g2 = mins[p];
+        if (g2 !== 0 && g2 !== 255) {
+          g2 = range > 30 ? Math.round(255 * (g2 - mnAll) / range) : (g2 < 128 ? 0 : 255);
+          d[i]=g2; d[i+1]=g2; d[i+2]=g2;
+        }
+      }
+      ctx.putImageData(img, 0, 0);
+      return c;
+    }
+    /* DÉCODAGE ZXING (V3) : complet, pivoté, recadrages zooms, et filtre couleurs si agressif */
+    function zxDecodeElement(el, aggressive) {
+      if (!window.ZXing || !getReader()) return null;
+      const w = el.videoWidth || el.naturalWidth || el.width;
+      const h = el.videoHeight || el.naturalHeight || el.height;
+      if (!w || !h) return null;
+      const scale = Math.min(1, 1200 / Math.max(w, h));
+      const cw = Math.max(1, Math.round(w * scale)), ch = Math.max(1, Math.round(h * scale));
+      const c = getZxCanvas(); c.width = cw; c.height = ch;
+      const ctx = c.getContext("2d", { willReadFrequently: true });
+      ctx.drawImage(el, 0, 0, cw, ch);
+      const ls = new ZXing.HTMLCanvasElementLuminanceSource(c);
+      try { return zxDecodeLs(ls); } catch(e1) {}
+      try { return zxDecodeLs(ls.rotateCounterClockwise()); } catch(e2) {}
+      const tries = [[0.66, 1.5], [0.45, 2.2]];
+      for (let t = 0; t < tries.length; t++) {
+        const frac = tries[t][0], sc = tries[t][1];
+        const rw = Math.max(1, Math.round(cw * frac)), rh = Math.max(1, Math.round(ch * frac));
+        const ox = Math.round((cw - rw) / 2), oy = Math.round((ch - rh) / 2);
+        const nw = Math.max(1, Math.min(1200, Math.round(rw * sc)));
+        const nh = Math.max(1, Math.min(1200, Math.round(rh * sc)));
+        const c2 = getZxCanvas2(); c2.width = nw; c2.height = nh;
+        const ctx2 = c2.getContext("2d", { willReadFrequently: true });
+        ctx2.imageSmoothingEnabled = true;
+        ctx2.drawImage(c, ox, oy, rw, rh, 0, 0, nw, nh);
+        try { return zxDecodeLs(new ZXing.HTMLCanvasElementLuminanceSource(c2)); } catch(e3) {}
+      }
+      if (aggressive) {
+        const fc = colorFilterCanvas(el, "white");
+        if (fc) {
+          const fls = new ZXing.HTMLCanvasElementLuminanceSource(fc);
+          try { return zxDecodeLs(fls); } catch(e4) {}
+          try { return zxDecodeLs(fls.rotateCounterClockwise()); } catch(e5) {}
+        }
+        const fcb = colorFilterCanvas(el, "black");
+        if (fcb) { try { return zxDecodeLs(new ZXing.HTMLCanvasElementLuminanceSource(fcb)); } catch(e7) {} }
+      }
+      return null;
+    }
+    /* STABILISATEUR (V3) : netteté + tremblement, zone du code mémorisée, meilleure image gardée */
+    const stabCv = document.createElement("canvas"); stabCv.width = 96; stabCv.height = 72;
+    const stabCtx = stabCv.getContext("2d", { willReadFrequently: true });
+    let stabPrev = null, stabLast = { sharp: 1, motion: 0 };
+    let stabZone = null, stabBest = null, stabBestScore = -1, stabBestAt = 0, stabHintAt = 0;
+    function stabMeasure(video) {
+      try {
+        stabCtx.drawImage(video, 0, 0, 96, 72);
+        const d = stabCtx.getImageData(0, 0, 96, 72).data;
+        const g = new Array(d.length / 4);
+        for (let i = 0; i < d.length; i += 4) g[i / 4] = (d[i] * 3 + d[i+1] * 6 + d[i+2]) / 10;
+        const lap = []; let s = 0, n = 0;
+        for (let y = 1; y < 71; y++) for (let x = 1; x < 95; x++) {
+          const l = Math.abs(4*g[y*96+x] - g[y*96+x-1] - g[y*96+x+1] - g[(y-1)*96+x] - g[(y+1)*96+x]);
+          lap.push(l); s += l; n++;
+        }
+        const mean = s / n; let vr = 0;
+        for (let i = 0; i < n; i++) { const dv = lap[i] - mean; vr += dv * dv; }
+        vr /= n;
+        const sharp = Math.min(1, vr / 120);
+        let motion = 0;
+        if (stabPrev && stabPrev.length === g.length) {
+          let ds = 0;
+          for (let i = 0; i < g.length; i++) ds += Math.abs(g[i] - stabPrev[i]);
+          motion = Math.min(1, (ds / g.length) / 40);
+        }
+        stabPrev = g;
+        stabLast = { sharp, motion };
+        return stabLast;
+      } catch(e) { return stabLast; }
+    }
+    function stabZoneFrom(codeObj, video) {
+      try {
+        const pts = codeObj && codeObj.cornerPoints;
+        if (!pts || pts.length < 4) return;
+        const xs = [], ys = [];
+        for (let i = 0; i < pts.length; i++) { xs.push(pts[i].x); ys.push(pts[i].y); }
+        const w = video.videoWidth || 1, h = video.videoHeight || 1;
+        const x0 = Math.min.apply(null, xs) / w, x1 = Math.max.apply(null, xs) / w;
+        const y0 = Math.min.apply(null, ys) / h, y1 = Math.max.apply(null, ys) / h;
+        if (x1 - x0 < 0.01 || y1 - y0 < 0.01) return;
+        stabZone = { x: x0, y: y0, w: x1 - x0, h: y1 - y0 };
+      } catch(e) {}
+    }
+    function zxDecodeZone(el, zone) {
+      if (!window.ZXing || !getReader() || !zone) return null;
+      const w = el.videoWidth || el.naturalWidth || el.width;
+      const h = el.videoHeight || el.naturalHeight || el.height;
+      if (!w || !h) return null;
+      const pad = 0.8;
+      const x0 = Math.max(0, Math.min(1, zone.x - zone.w * pad));
+      const y0 = Math.max(0, Math.min(1, zone.y - zone.h * pad));
+      const zw = Math.min(1 - x0, zone.w * (1 + 2 * pad));
+      const zh = Math.min(1 - y0, zone.h * (1 + 2 * pad));
+      if (zw < 0.02 || zh < 0.02) return null;
+      const px = Math.round(x0 * w), py = Math.round(y0 * h);
+      const pw = Math.max(8, Math.round(zw * w)), ph = Math.max(8, Math.round(zh * h));
+      const sc = Math.min(4, 1000 / Math.max(pw, ph));
+      const c = getZxCanvas2();
+      c.width = Math.max(1, Math.round(pw * sc)); c.height = Math.max(1, Math.round(ph * sc));
+      const ctx = c.getContext("2d", { willReadFrequently: true });
+      ctx.imageSmoothingEnabled = true;
+      ctx.drawImage(el, px, py, pw, ph, 0, 0, c.width, c.height);
+      const ls = new ZXing.HTMLCanvasElementLuminanceSource(c);
+      try { return zxDecodeLs(ls); } catch(e1) {}
+      try { return zxDecodeLs(ls.rotateCounterClockwise()); } catch(e2) {}
+      return null;
+    }
+    function stabKeepBest(video, sharp) {
+      const now = Date.now();
+      if (stabBest && sharp <= stabBestScore + 0.04 && now - stabBestAt < 2500) return;
+      try {
+        const w = video.videoWidth || 1, h = video.videoHeight || 1;
+        const sc = Math.min(1, 900 / Math.max(w, h));
+        if (!stabBest) stabBest = document.createElement("canvas");
+        stabBest.width = Math.max(1, Math.round(w * sc));
+        stabBest.height = Math.max(1, Math.round(h * sc));
+        stabBest.getContext("2d").drawImage(video, 0, 0, stabBest.width, stabBest.height);
+        stabBestScore = sharp; stabBestAt = now;
+      } catch(e) {}
+    }
+    function stabSeenHint() {
+      const now = Date.now();
+      if (now - stabHintAt < 1500) return;
+      stabHintAt = now;
+      toast("🎯 Code repéré — ne bouge plus, lecture en cours…", 1300);
+    }
+    function stabBlurHint() {
+      const now = Date.now();
+      if (now - stabHintAt < 2000) return;
+      stabHintAt = now;
+      toast("🖐️ Image floue ou instable — rapproche le code et tiens l'appareil stable", 1600);
+    }
+    function engineReset() {
+      stabPrev = null; stabZone = null; stabBest = null; stabBestScore = -1; stabBestAt = 0;
+      resetCandidates();
+    }
+    /* CLÉS DE CONTRÔLE (V3) : EAN-13, EAN-8, UPC, ITF-14 */
+    function fmtOkV3(v, fmt) {
+      if (fmt === "EAN13") return /^\d{13}$/.test(v) && eanKey(v.slice(0, 12), false) === v[12];
+      if (fmt === "EAN8") return /^\d{8}$/.test(v) && eanKey(v.slice(0, 7), true) === v[7];
+      if (fmt === "UPC") return /^\d{12}$/.test(v) && eanKey(v.slice(0, 11), true) === v[11];
+      if (fmt === "ITF14") return /^\d{14}$/.test(v) && eanKey(v.slice(0, 13), false) === v[13];
+      return true;
+    }
+    function checkValue(value, fmt) {
+      if (fmt !== "EAN13" && fmt !== "EAN8" && fmt !== "UPC" && fmt !== "ITF14") return null;
+      const v = value.replace(/\D/g, "");
+      const fix = "🛠️ Chiffre manquant : la clé de contrôle a été recalculée automatiquement.";
+      if (fmt === "EAN13") {
+        if (v.length === 12) return { ok: true, value: v + eanKey(v, false), note: fix };
+        if (v.length === 13) return fmtOkV3(v, "EAN13") ? { ok: true, value: v } : { ok: false, value: v };
+        return null;
+      }
+      if (fmt === "EAN8") {
+        if (v.length === 7) return { ok: true, value: v + eanKey(v, true), note: fix };
+        if (v.length === 8) return fmtOkV3(v, "EAN8") ? { ok: true, value: v } : { ok: false, value: v };
+        return null;
+      }
+      if (fmt === "UPC") {
+        if (v.length === 11) return { ok: true, value: v + eanKey(v, true), note: fix };
+        if (v.length === 12) return fmtOkV3(v, "UPC") ? { ok: true, value: v } : { ok: false, value: v };
+        return null;
+      }
+      if (fmt === "ITF14") {
+        if (v.length === 13) return { ok: true, value: v + eanKey(v, false), note: fix };
+        if (v.length === 14) return fmtOkV3(v, "ITF14") ? { ok: true, value: v } : { ok: false, value: v };
+        return null;
+      }
+      return null;
+    }
+    /* VOTE DES LECTURES VOISINES (V3) : recompose le code le plus probable */
+    let candPool = [], candTimer = null, candFmt = null;
+    function resetCandidates() {
+      candPool = []; candFmt = null;
+      if (candTimer) { clearTimeout(candTimer); candTimer = null; }
+    }
+    function majorityVote(pool) {
+      if (!pool.length) return null;
+      const L = pool[0].v.length; let out = "";
+      for (let p = 0; p < L; p++) {
+        const cnt = {}; let bch = "", bn = 0;
+        for (let i = 0; i < pool.length; i++) {
+          const ch = pool[i].v[p];
+          cnt[ch] = (cnt[ch] || 0) + 1;
+        }
+        for (const k in cnt) if (cnt[k] > bn) { bn = cnt[k]; bch = k; }
+        out += bch;
+      }
+      return out;
+    }
+    function resolveCandidates() {
+      const pool = candPool, fmt = candFmt;
+      resetCandidates();
+      if (!pool.length || !fmt) return;
+      const voted = majorityVote(pool);
+      const chk = voted ? checkValue(voted, fmt) : null;
+      if (chk && chk.ok) engineFinal(chk.value, chk.note || "🛠️ Code recomposé à partir des lectures voisines, puis vérifié par la clé de contrôle.");
+      else if (voted) engineFinal(voted, null);
+    }
+    function engineFmt(raw) {
+      const f = String(raw || "").toUpperCase();
+      if (f === "EAN_13" || f === "EAN13") return "EAN13";
+      if (f === "EAN_8" || f === "EAN8") return "EAN8";
+      if (f === "UPC_A" || f === "UPC" || f === "UPC_E") return "UPC";
+      if (f === "ITF_14" || f === "ITF14") return "ITF14";
+      return null;
+    }
+    let lastAccVal = "", lastAccAt = 0;
+    function engineFinal(v, note) {
+      const now = Date.now();
+      if (v === lastAccVal && now - lastAccAt < 2200) return;
+      lastAccVal = v; lastAccAt = now;
+      onLiveDecoded(v, activeVideo(), note);
+    }
+    function engineAccept(text, rawFmt) {
+      const v = String(text || "").trim();
+      if (!v) return;
+      const ef = engineFmt(rawFmt);
+      if (!ef) { engineFinal(v, null); return; }
+      const chk = checkValue(v, ef);
+      if (chk && chk.ok) { engineFinal(chk.value, chk.note || null); return; }
+      candPool.push({ v: v.replace(/\D/g, "") });
+      candFmt = ef;
+      if (candPool.length >= 4) resolveCandidates();
+      else if (!candTimer) candTimer = setTimeout(resolveCandidates, 1200);
+    }
+    /* BOUCLE MOTEUR : lecteur natif + ZXing + zone mémorisée + meilleure image + cadence adaptative */
     function startScanLoop(video) {
       stopScanLoop();
+      engineReset();
       if (!liveStream) return; // mode html5-qrcode : il décode lui-même
-      try { lensDetector = new BarcodeDetector({ formats: LENS_FORMATS }); } catch(e) { return; }
+      try { lensDetector = new BarcodeDetector({ formats: LENS_FORMATS }); } catch(e) { lensDetector = null; }
       const det = lensDetector;
-      let fails = 0;
-      scanTimer = setInterval(async () => {
-        if (!video || video.readyState < 2) return;
+      let zxTickCpt = 0, busy = false;
+      const tick = async () => {
+        if (!liveStream || !video || video.readyState < 2) { scanTimer = setTimeout(tick, 300); return; }
+        if (busy) { scanTimer = setTimeout(tick, 120); return; }
+        busy = true;
+        let sharp = 1;
         try {
-          const codes = await det.detect(video);
-          fails = 0;
-          if (codes && codes.length) {
-            const v = String(codes[0].rawValue || "");
-            if (v) onLiveDecoded(v, video);
+          const m = stabMeasure(video); sharp = m.sharp;
+          const aggressive = (zxTickCpt % 8 === 7);
+          let r = null;
+          if (det) {
+            try {
+              const codes = await det.detect(video);
+              if (codes && codes.length) {
+                stabZoneFrom(codes[0], video);
+                const v = String(codes[0].rawValue || "");
+                if (v) r = { text: v, format: codes[0].format };
+              }
+            } catch(e) {}
           }
-        } catch(e) { fails++; if (fails === 12) toast("⚠️ Lecture vidéo difficile — rapproche-toi du code"); }
-      }, 180);
+          if (!r && window.ZXing && getReader()) {
+            if (stabZone) { try { r = zxDecodeZone(video, stabZone); } catch(eZ) {} }
+            if (!r && sharp > 0.10) { stabKeepBest(video, sharp); r = zxDecodeElement(video, aggressive); }
+            if (!r && stabBest && (zxTickCpt % 4 === 3)) { try { r = zxDecodeElement(stabBest, false); } catch(eB) {} }
+          }
+          if (r) engineAccept(r.text, r.format);
+          else if (stabZone || candPool.length) stabSeenHint();
+          else if (sharp < 0.05) stabBlurHint();
+        } catch(e) {}
+        busy = false; zxTickCpt++;
+        if (liveStream) {
+          let delay = 250;
+          if (sharp < 0.05) delay = 320;
+          else if (sharp > 0.25) delay = 130;
+          scanTimer = setTimeout(tick, delay);
+        }
+      };
+      scanTimer = setTimeout(tick, 120);
     }
-    async function onLiveDecoded(val, video) {
+    async function onLiveDecoded(val, video, note) {
       if (navigator.vibrate) navigator.vibrate(120);
       stopAutoZoom();
       let snap = null;
@@ -1312,12 +1632,17 @@
         }
       } catch(e) {}
       showResult(val, null, snap);
+      if (note) {
+        const rn = document.getElementById("repair-note");
+        rn.textContent = note;
+        rn.style.display = "block";
+      }
       if (!continuousMode) {
         stopCamera();
         toast("✅ Code lu — voici le résultat", 2400);
         setTimeout(() => document.getElementById("result-area").scrollIntoView({ behavior: "smooth" }), 200);
       } else {
-        toast("✅ " + val.slice(0, 40) + (val.length > 40 ? "…" : ""), 1800);
+        toast("✅ " + String(val).slice(0, 40) + (val.length > 40 ? "…" : ""), 1800);
       }
     }
     function camStarted(video) {
