@@ -1284,6 +1284,43 @@
       }
     }
 
+    // ========== PAYS D'ATTRIBUTION GS1 (déduit du préfixe du code-barres, 100 % local) ==========
+    function gs1Pays(d) {
+      if (d.length === 12 && /^[01]/.test(d)) return "États-Unis / Canada (UPC)";
+      if (d.length === 13 && /^0[01]/.test(d)) return "États-Unis / Canada (UPC complété)";
+      if (d.length === 13 && /^2/.test(d)) return "préfixe 2 — code interne magasin (souvent France)";
+      if (d.length !== 13) return null;
+      const p = parseInt(d.slice(0, 3), 10);
+      const T = [
+        [300, 379, "France et Monaco"], [380, 380, "Bulgarie"], [383, 383, "Slovénie"], [385, 385, "Croatie"],
+        [387, 387, "Bosnie-Herzégovine"], [389, 389, "Monténégro"], [390, 390, "Serbie"], [400, 440, "Allemagne"],
+        [450, 459, "Japon"], [460, 469, "Russie"], [470, 470, "Kirghizistan"], [471, 471, "Taïwan"], [474, 474, "Estonie"],
+        [475, 475, "Lettonie"], [476, 476, "Azerbaïdjan"], [477, 477, "Lituanie"], [478, 478, "Ouzbékistan"],
+        [479, 479, "Sri Lanka"], [480, 480, "Philippines"], [481, 481, "Biélorussie"], [482, 482, "Ukraine"],
+        [484, 484, "Moldavie"], [485, 485, "Arménie"], [486, 486, "Géorgie"], [487, 487, "Kazakhstan"],
+        [488, 488, "Tadjikistan"], [489, 489, "Hong Kong"], [490, 499, "Japon"], [500, 509, "Royaume-Uni"],
+        [520, 521, "Grèce"], [528, 528, "Liban"], [529, 529, "Chypre"], [530, 530, "Albanie"], [531, 531, "Macédoine du Nord"],
+        [535, 535, "Malte"], [539, 539, "Irlande"], [540, 549, "Belgique et Luxembourg"], [560, 560, "Portugal"],
+        [569, 569, "Islande"], [570, 579, "Danemark"], [590, 590, "Pologne"], [594, 594, "Roumanie"], [599, 599, "Hongrie"],
+        [600, 601, "Afrique du Sud"], [603, 603, "Ghana"], [604, 604, "Sénégal"], [608, 608, "Bahreïn"], [609, 609, "Maurice"],
+        [611, 611, "Maroc"], [613, 613, "Algérie"], [615, 615, "Nigeria"], [616, 616, "Kenya"], [618, 618, "Côte d'Ivoire"],
+        [619, 619, "Tunisie"], [620, 620, "Tanzanie"], [621, 621, "Syrie"], [622, 622, "Égypte"], [623, 623, "Brunei"],
+        [624, 624, "Libye"], [625, 625, "Jordanie"], [626, 626, "Iran"], [627, 627, "Koweït"], [628, 628, "Arabie saoudite"],
+        [629, 629, "Émirats arabes unis"], [640, 649, "Finlande"], [690, 699, "Chine"], [700, 709, "Norvège"],
+        [729, 729, "Israël"], [730, 739, "Suède"], [740, 745, "Amérique centrale"], [746, 746, "République dominicaine"],
+        [750, 750, "Mexique"], [754, 755, "Canada"], [759, 759, "Venezuela"], [760, 769, "Suisse"], [770, 771, "Colombie"],
+        [773, 773, "Uruguay"], [775, 775, "Pérou"], [777, 777, "Bolivie"], [778, 779, "Argentine"], [780, 780, "Chili"],
+        [784, 784, "Paraguay"], [786, 786, "Équateur"], [789, 790, "Brésil"], [800, 839, "Italie"], [840, 849, "Espagne"],
+        [850, 850, "Cuba"], [858, 858, "Slovaquie"], [859, 859, "Tchéquie"], [860, 860, "Serbie"], [865, 865, "Mongolie"],
+        [867, 867, "Corée du Nord"], [868, 869, "Turquie"], [870, 879, "Pays-Bas"], [880, 880, "Corée du Sud"],
+        [884, 884, "Cambodge"], [885, 885, "Thaïlande"], [888, 888, "Singapour"], [890, 890, "Inde"], [893, 893, "Vietnam"],
+        [896, 896, "Pakistan"], [899, 899, "Indonésie"], [900, 919, "Autriche"], [930, 939, "Australie"],
+        [940, 949, "Nouvelle-Zélande"], [955, 955, "Malaisie"], [958, 958, "Macao"]
+      ];
+      const hit = T.find(([a, b]) => p >= a && p <= b);
+      return hit ? hit[2] : null;
+    }
+
     // ========== PRODUIT (Open Food Facts etc.) ==========
     async function lookupProduct(code) {
       const zone = $("product-info");
@@ -1342,9 +1379,9 @@
       // Open Food Facts → Beauty → Products (alimentaire, cosmétique, ménager, bricolage, jardinage, jeux…)
       zone.innerHTML = "📦 <b>Type : produit (code " + digits + ")</b><br><span class='hint'>Recherche de la fiche…</span>";
       const apis = [
-        { u: `https://world.openfoodfacts.org/api/v2/product/${digits}.json`, s: "Open Food Facts" },
-        { u: `https://world.openbeautyfacts.org/api/v2/product/${digits}.json`, s: "Open Beauty Facts" },
-        { u: `https://world.openproductsfacts.org/api/v2/product/${digits}.json`, s: "Open Products Facts" }
+        { u: `https://world.openfoodfacts.org/api/v2/product/${digits}.json`, s: "Open Food Facts", w: "https://world.openfoodfacts.org/product/" },
+        { u: `https://world.openbeautyfacts.org/api/v2/product/${digits}.json`, s: "Open Beauty Facts", w: "https://world.openbeautyfacts.org/product/" },
+        { u: `https://world.openproductsfacts.org/api/v2/product/${digits}.json`, s: "Open Products Facts", w: "https://world.openproductsfacts.org/product/" }
       ];
       for (const api of apis) {
         try {
@@ -1370,7 +1407,7 @@
               html += `<span class="hint">Composition : ${ing}${ing.length >= 180 ? "…" : ""}</span><br>`;
             }
             html += `<span class='hint'>Source : ${api.s}</span><br>`;
-            html += `<a href="https://fr.openfoodfacts.org/produit/${digits}" target="_blank" rel="noopener" style="color:#22d3ee">Fiche complète</a> · `;
+            html += `<a href="${api.w}${digits}" target="_blank" rel="noopener" style="color:#22d3ee">Fiche complète</a> · `;
             html += `<a href="https://www.google.com/search?tbm=shop&q=${digits}" target="_blank" rel="noopener" style="color:#22d3ee">Prix / achat</a> · `;
             html += `<a href="https://www.google.com/search?q=${encodeURIComponent((p.product_name || "") + " avis")}" target="_blank" rel="noopener" style="color:#22d3ee">Avis clients</a>`;
             zone.innerHTML = html;
@@ -1378,11 +1415,19 @@
           }
         } catch (_) {}
       }
-      // Produit bien lu mais inconnu des bases gratuites → on l'affiche quand même avec des recherches web
+      // Produit bien lu mais inconnu des 3 bases gratuites → infos du code + recherches ciblées + contribution
+      const pays = gs1Pays(digits);
       zone.innerHTML = "📦 <b>Type : produit (code " + digits + ")</b><br>" +
-        "<span class='hint'>Produit bien lu mais inconnu des bases gratuites (Open Food / Beauty / Products Facts) — c'est le fabricant ou des bénévoles qui y ajoutent les fiches, et celle-ci manque.</span><br>" +
-        "<a href=\"https://www.google.com/search?tbm=shop&q=" + digits + "\" target=\"_blank\" rel=\"noopener\" style=\"color:#22d3ee\">🛒 Chercher ce produit à vendre</a> · " +
-        "<a href=\"https://www.google.com/search?q=" + digits + "\" target=\"_blank\" rel=\"noopener\" style=\"color:#22d3ee\">🔎 Rechercher ce code sur le web</a>";
+        (pays ? "<span class='hint'>🌍 Code attribué par GS1 : " + pays + " (déduit du préfixe du code-barres, sans Internet).</span><br>" : "") +
+        "<span class='hint'>Fiche absente des 3 bases gratuites interrogées : Open Food Facts (alimentaire) · Open Beauty Facts (savons, cosmétiques, soins du corps, shampoing, gel douche, dentifrice…) · Open Products Facts (ménager, sol, bricolage, jardin, jeux et tout le reste). Ces bases sont remplies par les fabricants et des bénévoles : la fiche de ce produit n'y a pas encore été ajoutée.</span><br>" +
+        "<a href=\"https://www.google.com/search?q=" + digits + "\" target=\"_blank\" rel=\"noopener\" style=\"color:#22d3ee\">🔎 Rechercher ce code sur Google</a> · " +
+        "<a href=\"https://www.google.com/search?tbm=shop&q=" + digits + "\" target=\"_blank\" rel=\"noopener\" style=\"color:#22d3ee\">🛒 Chercher ce produit à vendre (prix)</a> · " +
+        "<a href=\"https://www.amazon.fr/s?k=" + digits + "\" target=\"_blank\" rel=\"noopener\" style=\"color:#22d3ee\">📦 Amazon.fr</a> · " +
+        "<a href=\"https://www.ebay.fr/sch/i.html?_nkw=" + digits + "\" target=\"_blank\" rel=\"noopener\" style=\"color:#22d3ee\">🛍️ eBay</a><br>" +
+        "<span class='hint'>➕ Ajouter la fiche aux bases (gratuit, 2 min) :</span> " +
+        "<a href=\"https://world.openbeautyfacts.org/cgi/product.pl?type=add&code=" + digits + "\" target=\"_blank\" rel=\"noopener\" style=\"color:#22d3ee\">cosmétique / soin</a> · " +
+        "<a href=\"https://world.openproductsfacts.org/cgi/product.pl?type=add&code=" + digits + "\" target=\"_blank\" rel=\"noopener\" style=\"color:#22d3ee\">autre produit</a> · " +
+        "<a href=\"https://world.openfoodfacts.org/cgi/product.pl?type=add&code=" + digits + "\" target=\"_blank\" rel=\"noopener\" style=\"color:#22d3ee\">alimentaire</a>";
     }
 
     // ========== GÉNÉRATION ==========
