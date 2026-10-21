@@ -713,6 +713,10 @@
       </div>
 
       <div id="product-info" class="prod-zone" style="display:none"></div>
+      <div id="result-search-actions" style="display:none;gap:6px;margin-top:10px;flex-wrap:wrap">
+        <button class="secondary sm" id="rs-google-btn">🔎 Rechercher sur Google</button>
+        <button class="secondary sm" id="rs-lens-btn">🔗 Google Lens (photo)</button>
+      </div>
 
       <div class="color-row">
         <span class="hint">Couleur :</span>
@@ -768,12 +772,35 @@
     </div>
   </div>
 
+  <div class="section" id="sec-search">
+    <div class="card">
+      <h2>🔎 Rechercher un produit</h2>
+      <p class="hint">Photographie le produit, code-barres lisible ou non : l'app cherche le code dans les bases ouvertes, lit le texte de l'emballage (OCR), et propose Google Lens.</p>
+      <input type="file" id="search-file" accept="image/*" capture="environment" style="display:none">
+      <button id="search-photo-btn">📸 Photographier / choisir une image</button>
+      <p class="hint" id="search-status" style="display:none;margin-top:10px"></p>
+      <div id="search-result"></div>
+      <div id="search-lens-row" style="display:none;margin-top:10px">
+        <button class="secondary" id="search-lens-btn">🔗 Google Lens</button>
+        <button class="secondary" id="search-share-btn" style="margin-left:6px">📤 Partager la photo</button>
+      </div>
+      <canvas id="search-canvas" style="display:none"></canvas>
+    </div>
+    <div class="card">
+      <h2>⌨️ Saisie manuelle</h2>
+      <input type="text" id="search-input" placeholder="Code-barres (8-14 chiffres) ou nom de produit" style="width:100%">
+      <button id="search-go" style="margin-top:8px">Rechercher</button>
+      <div id="search-manual-result" style="margin-top:10px"></div>
+    </div>
+  </div>
+
   <p class="footer-note">
-    🔒 Tout reste sur ton appareil — rien n’est envoyé sauf fiches produit (Open Food Facts) ou l’IA que tu as choisie (si activée)
+    🔒 Tout reste sur ton appareil — rien n’est envoyé sauf fiches produit (bases ouvertes Open Food / Beauty / Products Facts) ou l’IA que tu as choisie (si activée). Google Lens s’ouvre dans un nouvel onglet avec la photo copiée localement sur ton appareil.
   </p>
 
   <nav class="bottom-nav">
     <button class="active" data-sec="sec-scan"><span class="icon">📷</span>Scanner</button>
+    <button data-sec="sec-search"><span class="icon">🔎</span>Rechercher</button>
     <button data-sec="sec-gen"><span class="icon">✨</span>Générer</button>
     <button data-sec="sec-hist"><span class="icon">🕘</span>Historique</button>
   </nav>
@@ -2264,6 +2291,11 @@ var tornFromImage = tornApi.fromImage;
 
       saveHistory(value, format);
       lookupProduct(value);
+      const rsa = $("result-search-actions");
+      if (rsa) {
+        rsa.style.display = "flex";
+        $("rs-lens-btn").style.display = sourceCanvas ? "" : "none";
+      }
     }
 
     function interpretContent(v) {
@@ -3106,6 +3138,219 @@ Ne invente pas de numéro de téléphone ou d'adresse. Reste factuel.`,
       } catch (e) {
         toast("Erreur IA : " + (e.message || e));
       }
+    };
+
+    // ========== RECHERCHE PRODUIT (V38) ==========
+    let searchBusy = false;
+    let searchLensCanvas = null; // canvas de la photo chargée dans l'onglet Rechercher
+    let searchDetector = null;
+    try {
+      if (typeof BarcodeDetector !== "undefined") {
+        searchDetector = new BarcodeDetector({ formats: ["ean_13", "ean_8", "upc_a", "upc_e", "code_128", "code_39", "itf", "data_matrix", "qr_code"] });
+      }
+    } catch (_) { searchDetector = null; }
+
+    function searchOcrCandidates(text) {
+      const lines = String(text || "").split(/\r?\n/).map(l => l.replace(/\s+/g, " ").trim()).filter(Boolean);
+      const out = [], seen = {};
+      for (const l of lines) {
+        if (l.length < 3 || l.length > 60) continue;
+        if (/^[\d\s.,%€$-]+$/.test(l)) continue; // nombres purs : pas des noms
+        const key = l.toUpperCase();
+        if (seen[key]) continue;
+        seen[key] = 1;
+        out.push(l);
+        if (out.length >= 6) break;
+      }
+      return out;
+    }
+
+    async function searchLookup(digits, zone) {
+      const apis = [
+        { u: "https://world.openfoodfacts.org/api/v2/product/" + digits + ".json", s: "Open Food Facts", w: "https://world.openfoodfacts.org/product/" },
+        { u: "https://world.openbeautyfacts.org/api/v2/product/" + digits + ".json", s: "Open Beauty Facts", w: "https://world.openbeautyfacts.org/product/" },
+        { u: "https://world.openproductsfacts.org/api/v2/product/" + digits + ".json", s: "Open Products Facts", w: "https://world.openproductsfacts.org/product/" }
+      ];
+      zone.innerHTML = "<div class='prod-zone'>🔎 Recherche du produit <b>" + digits + "</b> dans les bases ouvertes…</div>";
+      for (const api of apis) {
+        try {
+          const r = await fetch(api.u);
+          if (!r.ok) continue;
+          const j = await r.json();
+          if (j.status === 1 && j.product) {
+            const p = j.product;
+            let html = "<div class='prod-zone'>📦 <b>Produit trouvé</b><br>";
+            if (p.image_front_small_url) html += "<img src=\"" + p.image_front_small_url + "\" alt=\"Produit\">";
+            html += "<b>" + escapeHtml(p.product_name || p.generic_name || "Produit") + "</b><br>";
+            if (p.brands) html += escapeHtml(p.brands) + "<br>";
+            if (p.quantity) html += escapeHtml(p.quantity) + "<br>";
+            if (p.nutriscore_grade) {
+              const g = String(p.nutriscore_grade).toUpperCase();
+              const colors = { A: "#038141", B: "#85bb2f", C: "#fecb02", D: "#ee8100", E: "#e63e11" };
+              html += "<span class='nutri' style='background:" + (colors[g] || "#666") + "'>" + g + "</span> Nutri-Score<br>";
+            }
+            html += "<span class='hint'>Source : " + api.s + " (ODbL)</span><br>";
+            html += "<a href='" + api.w + digits + "' target='_blank' rel='noopener' style='color:#22d3ee'>Fiche complète</a> · " +
+              "<a href='https://www.google.com/search?tbm=shop&q=" + digits + "' target='_blank' rel='noopener' style='color:#22d3ee'>🛒 Prix / achat</a> · " +
+              "<a href='https://www.google.com/search?q=" + encodeURIComponent((p.product_name || "") + " avis") + "' target='_blank' rel='noopener' style='color:#22d3ee'>Avis clients</a>";
+            html += "</div>";
+            zone.innerHTML = html;
+            return;
+          }
+        } catch (_) {}
+      }
+      zone.innerHTML = "<div class='prod-zone'>📦 <b>Code " + digits + "</b> — fiche absente des 3 bases ouvertes (Open Food / Beauty / Products Facts : remplies par des bénévoles).<br>" +
+        "<a href='https://www.google.com/search?q=" + digits + "' target='_blank' rel='noopener' style='color:#22d3ee'>🔎 Rechercher ce code sur Google</a> · " +
+        "<a href='https://www.google.com/search?tbm=shop&q=" + digits + "' target='_blank' rel='noopener' style='color:#22d3ee'>🛒 Chercher à vendre (prix)</a> · " +
+        "<a href='https://www.amazon.fr/s?k=" + digits + "' target='_blank' rel='noopener' style='color:#22d3ee'>📦 Amazon.fr</a></div>";
+    }
+
+    async function lensFromCanvas(canvas) {
+      // 1) presse-papiers → Lens (desktop / Android / iOS récents)
+      try {
+        if (navigator.clipboard && typeof ClipboardItem !== "undefined") {
+          const blob = await new Promise(r => canvas.toBlob(r, "image/png"));
+          if (blob) {
+            await navigator.clipboard.write([new ClipboardItem({ "image/png": blob })]);
+            window.open("https://lens.google.com/", "_blank");
+            toast("Photo copiée — colle-la dans Lens (Ctrl+V ou appui long)");
+            return;
+          }
+        }
+      } catch (_) {}
+      // 2) partage natif mobile (menu de partage → Google / Lens)
+      try {
+        const blob2 = await new Promise(r => canvas.toBlob(r, "image/png"));
+        const file = new File([blob2], "gscan-produit.png", { type: "image/png" });
+        if (navigator.canShare && navigator.canShare({ files: [file] })) {
+          await navigator.share({ files: [file], title: "Rechercher ce produit" });
+          toast("Choisis Google / Lens dans le menu de partage");
+          return;
+        }
+      } catch (_) {}
+      // 3) dernier repli : ouvrir Lens, l'utilisateur y glisse la photo
+      window.open("https://lens.google.com/", "_blank");
+      toast("Glisse ou colle la photo dans Lens");
+    }
+
+    async function searchAnalyze(canvas) {
+      if (searchBusy) return;
+      searchBusy = true;
+      searchLensCanvas = canvas;
+      const zone = $("search-result");
+      const st = $("search-status");
+      zone.innerHTML = "";
+      st.style.display = "block";
+      $("search-lens-row").style.display = "none";
+      try {
+        // 1) code-barres directement lisible sur la photo ?
+        if (searchDetector) {
+          st.textContent = "🔍 Lecture du code-barres sur la photo…";
+          try {
+            const codes = await searchDetector.detect(canvas);
+            if (codes && codes.length) {
+              const digits = String(codes[0].rawValue || "").replace(/\D/g, "");
+              if (digits.length >= 8 && digits.length <= 14) {
+                st.textContent = "✅ Code-barres lu : " + digits;
+                await searchLookup(digits, zone);
+                $("search-lens-row").style.display = "block";
+                searchBusy = false;
+                return;
+              }
+            }
+          } catch (_) {}
+        }
+        // 2) OCR du texte de l'emballage (même sans code-barres)
+        if (typeof Tesseract !== "undefined") {
+          st.textContent = "📄 Lecture du texte de l'emballage (OCR)… premier téléchargement ≈ 10 Mo";
+          if (!ocrWorker) ocrWorker = await Tesseract.createWorker("fra+eng");
+          const { data: { text } } = await ocrWorker.recognize(canvas);
+          const cands = searchOcrCandidates(text);
+          const nums = [...new Set(String(text).split(/\r?\n/).reduce((acc, l) => acc.concat((l.replace(/\s/g, "").match(/\d{12,13}/g) || [])), []))];
+          if (cands.length || nums.length) {
+            zone.innerHTML = "<div class='hint'>Aucun code-barres complet lisible — l'OCR lit ceci sur l'emballage :</div>";
+            for (const c of cands) {
+              const q = escapeHtml(c).replace(/'/g, "&#39;").replace(/"/g, "&#34;");
+              zone.innerHTML += "<button class='secondary sm search-cand' data-q=\"" + q + "\" style='margin:4px 4px 0 0'>🔎 " + escapeHtml(c) + "</button>";
+            }
+            if (nums.length) zone.innerHTML += "<div class='hint' style='margin-top:8px'>Numéro imprimé détecté : <b>" + escapeHtml(nums.join(", ")) + "</b></div>";
+            st.textContent = "👆 Clique sur le libellé du produit pour le rechercher sur Google";
+          } else {
+            zone.innerHTML = "<span class='hint'>Rien de lisible sur cette photo — essaie Google Lens ci-dessous, ou une photo plus nette et de face.</span>";
+            st.textContent = "OCR terminé — rien d'exploitable";
+          }
+        } else {
+          st.textContent = "OCR indisponible — utilise Google Lens ci-dessous";
+        }
+      } catch (e) {
+        st.textContent = "Erreur : " + (e && e.message ? e.message : e);
+      }
+      $("search-lens-row").style.display = "block";
+      searchBusy = false;
+    }
+
+    // câblage onglet Rechercher
+    $("search-photo-btn").onclick = () => $("search-file").click();
+    $("search-file").onchange = (e) => {
+      const f = e.target.files && e.target.files[0];
+      if (!f) return;
+      const img = new Image();
+      img.onload = () => {
+        const c = $("search-canvas");
+        const max = 1600;
+        const sc = Math.min(1, max / Math.max(img.width, img.height));
+        c.width = Math.max(1, Math.round(img.width * sc));
+        c.height = Math.max(1, Math.round(img.height * sc));
+        c.getContext("2d").drawImage(img, 0, 0, c.width, c.height);
+        searchAnalyze(c);
+      };
+      img.onerror = () => toast("Photo illisible");
+      img.src = URL.createObjectURL(f);
+      e.target.value = "";
+    };
+    $("search-result").addEventListener("click", (e) => {
+      const b = e.target && e.target.closest ? e.target.closest("button.search-cand") : null;
+      if (b) window.open("https://www.google.com/search?q=" + encodeURIComponent(b.dataset.q), "_blank");
+    });
+    $("search-lens-btn").onclick = async () => {
+      if (searchLensCanvas) await lensFromCanvas(searchLensCanvas);
+      else toast("Charge d'abord une photo");
+    };
+    $("search-share-btn").onclick = async () => {
+      if (!searchLensCanvas) { toast("Charge d'abord une photo"); return; }
+      try {
+        const blob = await new Promise(r => searchLensCanvas.toBlob(r, "image/png"));
+        const file = new File([blob], "gscan-produit.png", { type: "image/png" });
+        if (navigator.canShare && navigator.canShare({ files: [file] })) {
+          await navigator.share({ files: [file], title: "Rechercher ce produit" });
+          toast("Choisis Google / Lens dans le menu de partage");
+        } else {
+          toast("Partage d'image non supporté ici — utilise Google Lens");
+        }
+      } catch (_) {}
+    };
+    $("search-go").onclick = async () => {
+      const v = $("search-input").value.trim();
+      const zone = $("search-manual-result");
+      if (!v) { toast("Tape un numéro ou un nom de produit"); return; }
+      const compact = v.replace(/\s/g, "");
+      if (/^\d{8,14}$/.test(compact)) {
+        await searchLookup(compact, zone);
+        return;
+      }
+      zone.innerHTML = "<div class='prod-zone'>🔎 Recherche : <b>" + escapeHtml(v) + "</b><br>" +
+        "<a href='https://www.google.com/search?q=" + encodeURIComponent(v) + "' target='_blank' rel='noopener' style='color:#22d3ee'>Sur Google</a> · " +
+        "<a href='https://www.google.com/search?tbm=shop&q=" + encodeURIComponent(v) + "' target='_blank' rel='noopener' style='color:#22d3ee'>🛒 Prix</a> · " +
+        "<a href='https://www.bing.com/search?q=" + encodeURIComponent(v) + "' target='_blank' rel='noopener' style='color:#22d3ee'>Sur Bing</a></div>";
+    };
+
+    // boutons recherche sur l'écran résultat du scan
+    $("rs-google-btn").onclick = () => {
+      window.open("https://www.google.com/search?q=" + encodeURIComponent(currentValue), "_blank");
+    };
+    $("rs-lens-btn").onclick = async () => {
+      if (lastImageData) await lensFromCanvas(lastImageData);
+      else toast("Pas de photo pour ce scan");
     };
 
     // batch
