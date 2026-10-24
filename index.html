@@ -1993,6 +1993,73 @@ var tornFromImage = tornApi.fromImage;
     // L'OCR lit le numéro imprimé, puis les fragments de bandes visibles sur la photo
     // CONFIRMENT (ou infirment) ce numéro avant de régénérer. Jamais de confirmation sans preuve.
     var fusionBusy = false;
+    // ===== V40 : anti-raboutage (feuille découpée avec 2 codes-barres) =====
+    var crossBusy = false;
+    function looksStitched(v) {
+      var s = String(v || "");
+      if (s.length < 18) return false;
+      if (/[^0-9A-Za-z\-\.\/\+]/.test(s)) return false; // uniquement codes alphanumériques compacts
+      var h = Math.floor(s.length / 2);
+      for (var L = 10; L <= h; L++) {
+        if (s.slice(0, L) === s.slice(L, 2 * L)) return true; // valeur doublée (2 exemplaires raccrochés)
+      }
+      for (var i = 0; i + 10 <= s.length; i++) {
+        var r = s.slice(i, i + 10);
+        if (!/[0-9]/.test(r)) continue;
+        var at = s.indexOf(r, i + 10);
+        if (at < 0) continue;
+        var ext = r.length;
+        while (i + ext < s.length && at + ext < s.length && s[i + ext] === s[at + ext]) ext++;
+        if (ext >= 11) return true; // même séquence longue répétée = morceaux cousus
+      }
+      return false;
+    }
+
+    async function printedCrossCheck(c, values) {
+      // OCR du numéro imprimé sur la feuille ; retourne {value, note} si croisement prouvé, sinon null
+      try {
+        if (typeof Tesseract === "undefined") return null;
+        if (!ocrWorker) ocrWorker = await Tesseract.createWorker("fra+eng");
+        const { data: { text } } = await ocrWorker.recognize(c);
+        var flat = (text || "").replace(/\s+/g, " ");
+        var cands = [];
+        var push = function (x) { if (x && cands.indexOf(x) < 0 && cands.length < 12) cands.push(x); };
+        (flat.replace(/ /g, "").match(/\d{8,14}/g) || []).forEach(push);
+        (flat.match(/\d{8,14}/g) || []).forEach(push);
+        if (!cands.length) return null;
+        var i, j;
+        // 1) un code détecté correspond EXACTEMENT au numéro imprimé
+        for (i = 0; i < values.length; i++) {
+          for (j = 0; j < cands.length; j++) {
+            if (values[i] === cands[j]) return { value: values[i], note: "✅ Confirmé par le numéro imprimé sous le code" };
+          }
+        }
+        // 2) le numéro imprimé est CONTENU dans le code lu = morceaux de 2 codes raccrochés
+        for (j = 0; j < cands.length; j++) {
+          if (cands[j].length < 10) continue;
+          for (i = 0; i < values.length; i++) {
+            if (values[i] !== cands[j] && values[i].indexOf(cands[j]) >= 0) {
+              return { value: cands[j], note: "🛠🔧 Morceaux de codes différents étaient raccrochés (feuille découpée) — numéro imprimé retenu : " + cands[j] + " (vérifie-le)" };
+            }
+          }
+        }
+        // 3) plusieurs codes sur la photo : garder celui qui colle le mieux au numéro imprimé
+        if (values.length >= 2) {
+          var best = null, bestScore = 0;
+          for (i = 0; i < values.length; i++) {
+            for (j = 0; j < cands.length; j++) {
+              var a = values[i], b = cands[j], common = 0;
+              for (var k = 0; k < Math.min(a.length, b.length); k++) if (a[k] === b[k]) common++;
+              var score = common / Math.max(a.length, b.length);
+              if (score > bestScore) { bestScore = score; best = { value: a, note: "📄 2 codes-barres sur la photo — celui qui correspond au numéro imprimé a été retenu (l'autre : " + (values[1 - i] || "?") + ")" }; }
+            }
+          }
+          if (best && bestScore >= 0.8) return best;
+        }
+        return null;
+      } catch (_) { return null; }
+    }
+
     async function fusionRepair(c) {
       if (fusionBusy) return false;
       fusionBusy = true;
@@ -2187,7 +2254,22 @@ var tornFromImage = tornApi.fromImage;
         // en mode unique on s'arrête
         if (scanMode === "single") {
           stopCamera();
-          showResult(repaired.value, found.format || "unknown", repaired.note, chk, c);
+          if ((found.format || "") !== "qr_code" && (found.format || "") !== "data_matrix" && looksStitched(repaired.value) && !crossBusy) {
+            // V40 : lecture douteuse (morceaux raccrochés) — vérification OCR avant d'afficher
+            crossBusy = true;
+            try { $("vf-hint").textContent = "🛠🔟 Vérification du numéro imprimé…"; } catch (_) {}
+            var pcCam = null;
+            try { pcCam = await printedCrossCheck(c, [repaired.value]); } catch (_) {}
+            crossBusy = false;
+            if (pcCam) {
+              var repC = repairValue(pcCam.value);
+              showResult(repC.value, found.format || "unknown", repC.note || pcCam.note, checkValue(repC.value, found.format), c);
+            } else {
+              showResult(repaired.value, found.format || "unknown", "⚠📝 Lecture douteuse (morceaux raccrochés) — cadre un seul code, ou vérifie le numéro", chk, c);
+            }
+          } else {
+            showResult(repaired.value, found.format || "unknown", repaired.note, chk, c);
+          }
         } else if (scanMode === "batch") {
           addToBatch(repaired.value, found.format);
           lastDetections = [];
@@ -2196,7 +2278,7 @@ var tornFromImage = tornApi.fromImage;
           setTimeout(() => { if (scanning) $("vf-hint").textContent = "Cadre le prochain code"; }, 1200);
         } else {
           // continuous
-          showResult(repaired.value, found.format || "unknown", repaired.note, chk, c);
+          showResult(repaired.value, found.format || "unknown", looksStitched(repaired.value) ? "⚠📝 Lecture douteuse (morceaux raccrochés) — cadre un seul code" : repaired.note, chk, c);
           lastDetections = [];
           setTimeout(() => {
             if (scanning) {
@@ -2925,16 +3007,47 @@ var tornFromImage = tornApi.fromImage;
 
         lastImageData = c;
         let found = null;
+        let allCodes = [];
         if ("BarcodeDetector" in window) {
           try {
             const det = new BarcodeDetector({ formats: LENS_FORMATS });
             const codes = await det.detect(c);
             if (codes && codes[0]) found = codes[0];
+            if (codes && codes.length) allCodes = codes;
           } catch (_) {}
         }
+        var allVals = [];
+        allCodes.forEach(function (cd) {
+          if (cd && cd.rawValue && allVals.indexOf(cd.rawValue) < 0) allVals.push(cd.rawValue);
+        });
         if (found) {
-          const repaired = repairValue(found.rawValue);
-          showResult(repaired.value, found.format, repaired.note || "📷 depuis photo", checkValue(repaired.value), c);
+          var is1D = found.format !== "qr_code" && found.format !== "data_matrix" && found.format !== "pdf417" && found.format !== "aztec";
+          var stitched = is1D && looksStitched(found.rawValue);
+          var multi = allVals.length >= 2;
+          if (!stitched && !multi) {
+            const repaired = repairValue(found.rawValue);
+            showResult(repaired.value, found.format, repaired.note || "📷 depuis photo", checkValue(repaired.value), c);
+          } else {
+            // V40 : feuille découpée / plusieurs codes — croisement avec le numéro imprimé
+            var pc = null;
+            try {
+              var stx = $("ocr-status");
+              if (stx) { stx.style.display = "block"; stx.textContent = "🛠🔟 Vérification du numéro imprimé (OCR)…"; }
+              pc = await printedCrossCheck(c, allVals);
+              if (stx) {
+                stx.style.display = "block";
+                stx.textContent = pc ? "✅ Numéro imprimé vérifié" : "OCR : numéro imprimé illisible ou non concordant";
+              }
+            } catch (_) {}
+            if (pc) {
+              var repP = repairValue(pc.value);
+              showResult(repP.value, found.format, repP.note || pc.note, checkValue(repP.value, found.format), c);
+            } else {
+              const repaired = repairValue(found.rawValue);
+              var warn40 = (multi ? "📄 Plusieurs codes-barres sur la photo" : "⚠📝 Lecture douteuse (morceaux de codes raccrochés)") + " — vérifie le numéro, ou cadre un seul code à la fois";
+              showResult(repaired.value, found.format, warn40, checkValue(repaired.value), c);
+            }
+          }
         } else {
           var tr = null;
           try { tr = tornFromImage(c); } catch (_) {}
