@@ -699,6 +699,7 @@
         <div class="score-bar"><div id="score-fill" style="width:0%"></div></div>
       </div>
       <div id="repair-note" class="hint" style="display:none;color:#22d3ee"></div>
+      <div id="verify-note" class="hint" style="display:none"></div>
       <div id="content-info" class="hint" style="display:none"></div>
 
       <div class="before-after" id="before-after" style="display:none">
@@ -768,7 +769,12 @@
     <div class="card">
       <h2>🕘 Historique</h2>
       <div id="history-list" class="hint">Aucun code pour le moment</div>
-      <button class="ghost" id="clear-history" style="margin-top:12px">Tout effacer</button>
+      <div class="btn-row" style="margin-top:12px">
+        <button class="secondary" id="hist-export-btn">💾 Exporter</button>
+        <button class="secondary" id="hist-import-btn">📂 Restaurer</button>
+      </div>
+      <input type="file" id="hist-import-file" accept="application/json,.json" style="display:none">
+      <button class="ghost" id="clear-history" style="margin-top:8px">Tout effacer</button>
     </div>
   </div>
 
@@ -2288,6 +2294,7 @@ var tornFromImage = tornApi.fromImage;
       else if (format && format !== "qr_code" && format !== "aztec" && format !== "pdf417") genType = "barcode";
       setTypeTab(genType);
       regeneratePreview();
+      verifyRoundTrip();
 
       saveHistory(value, format);
       lookupProduct(value);
@@ -2518,8 +2525,110 @@ var tornFromImage = tornApi.fromImage;
           c2.getContext("2d").drawImage(canvas, 0, 0);
           baRegen.appendChild(c2);
         }
+
+        // test aller-retour après chaque génération
+        setTimeout(verifyRoundTrip, 150);
       } catch (e) {
         preview.textContent = "Impossible de générer : " + (e.message || e);
+      }
+    }
+
+    // ========== EXPORT / IMPORT HISTORIQUE (fonction OmniCode) ==========
+    function exportHistory() {
+      try {
+        const d = new Date();
+        const nom = "gscan-sauvegarde-" + d.getFullYear() + "-" +
+          String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0") + ".json";
+        const blob = new Blob([JSON.stringify(history, null, 2)], { type: "application/json" });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url; a.download = nom;
+        document.body.appendChild(a); a.click(); a.remove();
+        setTimeout(() => URL.revokeObjectURL(url), 2000);
+        toast("💾 Sauvegarde téléchargée (" + history.length + " codes) — sans perte de données");
+      } catch (e) { toast("Export impossible : " + (e.message || e)); }
+    }
+
+    function importHistoryFile(file) {
+      if (!file) return;
+      const fr = new FileReader();
+      fr.onload = () => {
+        try {
+          const arr = JSON.parse(fr.result);
+          if (!Array.isArray(arr)) throw new Error("format inattendu");
+          let added = 0;
+          const seen = new Set(history.map(h => h.v + "|" + (h.t || 0)));
+          for (const it of arr) {
+            if (!it || typeof it.v !== "string") continue;
+            const k = it.v + "|" + (it.t || 0);
+            if (seen.has(k)) continue;
+            seen.add(k);
+            history.push({ v: it.v, f: it.f || "", t: it.t || Date.now() });
+            added++;
+          }
+          history.sort((a, b) => (b.t || 0) - (a.t || 0));
+          if (history.length > 80) history.length = 80;
+          localStorage.setItem("gscan-cf-history", JSON.stringify(history));
+          renderHistory();
+          toast("📂 " + added + " code(s) restauré(s) — fusion sans perte");
+        } catch (e) { toast("Fichier invalide : " + (e.message || e)); }
+      };
+      fr.readAsText(file);
+    }
+
+    // ========== TEST ALLER-RETOUR OMNIIA (le code régénéré est relu par l'app) ==========
+    let verifyBusy = false;
+    async function verifyRoundTrip() {
+      const note = $("verify-note");
+      if (verifyBusy) return;
+      verifyBusy = true;
+      try {
+        const canvas = $("code-preview") && $("code-preview").querySelector("canvas");
+        if (!canvas || !currentValue) { if (note) note.style.display = "none"; return; }
+
+        // copie sur fond blanc, taille lisible
+        const c = document.createElement("canvas");
+        c.width = Math.max(320, canvas.width);
+        c.height = Math.max(320, canvas.height);
+        const ctx = c.getContext("2d");
+        ctx.fillStyle = "#FFFFFF";
+        ctx.fillRect(0, 0, c.width, c.height);
+        ctx.drawImage(canvas, 0, 0);
+
+        let texte = null;
+        // 1) BarcodeDetector natif
+        if ("BarcodeDetector" in window) {
+          try {
+            const det = new BarcodeDetector();
+            const codes = await det.detect(c);
+            if (codes && codes.length) texte = codes[0].rawValue;
+          } catch (_) {}
+        }
+        // 2) ZXing en repli
+        if (texte === null && typeof ZXing !== "undefined") {
+          try {
+            const reader = new ZXing.BrowserMultiFormatReader();
+            const res = await reader.decodeFromImageUrl(c.toDataURL("image/png"));
+            if (res) texte = res.getText ? res.getText() : res.text;
+          } catch (_) {}
+        }
+        if (texte === null) { if (note) note.style.display = "none"; return; }
+
+        if (note) {
+          note.style.display = "block";
+          if (texte === currentValue) {
+            note.style.color = "#16a34a";
+            note.textContent = "✅ Test réussi : le code régénéré a été relu par l’application — il contient bien le bon numéro. Vous pouvez l’utiliser.";
+          } else {
+            note.style.color = "#dc2626";
+            note.textContent = "❌ Test échoué : le code régénéré se lit « " + texte + " » au lieu de « " + currentValue + " ». Touche « Générer » pour réessayer ou change de type de code.";
+          }
+        }
+      } catch (_) {
+        const note = $("verify-note");
+        if (note) note.style.display = "none";
+      } finally {
+        verifyBusy = false;
       }
     }
 
@@ -2852,6 +2961,9 @@ var tornFromImage = tornApi.fromImage;
     // OCR / IA multi-fournisseurs / NFC
     $("ocr-btn").onclick = () => runOCR(false);
     $("ocr-free-btn").onclick = () => runOCR(true);
+    $("hist-export-btn").onclick = exportHistory;
+    $("hist-import-btn").onclick = () => $("hist-import-file").click();
+    $("hist-import-file").onchange = (e) => { importHistoryFile(e.target.files[0]); e.target.value = ""; };
     $("nfc-read-btn").onclick = nfcRead;
     $("nfc-write-btn").onclick = nfcWrite;
 
