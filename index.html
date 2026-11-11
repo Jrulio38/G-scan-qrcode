@@ -1628,7 +1628,7 @@ var tornApi = (function () {
           if (v > bestv) { bestv = v; th = i; }
         }
         var bin = new Array(n);
-        for (i = 0; i < n; i++) bin[i] = gr[i] < th ? 1 : 0;
+        for (i = 0; i < n; i++) bin[i] = gr[i] <= th ? 1 : 0;
         var res = null;
         for (var ori = 0; ori < 2 && !res; ori++) {
           var nLines = ori === 0 ? h : w, segLen = ori === 0 ? w : h;
@@ -1790,7 +1790,7 @@ var tornApi = (function () {
         if (v > bestv) { bestv = v; th = i; }
       }
       var bin = new Array(n);
-      for (i = 0; i < n; i++) bin[i] = gr[i] < th ? 1 : 0;
+      for (i = 0; i < n; i++) bin[i] = gr[i] <= th ? 1 : 0;
       var pcs = [], seen = {};
       for (var ori = 0; ori < 2; ori++) {
         var nLines = ori === 0 ? h : w, segLen = ori === 0 ? w : h;
@@ -2057,8 +2057,10 @@ var tornFromImage = tornApi.fromImage;
         b.textContent = v;
         b.style.marginRight = "6px";
         b.onclick = function () {
+          corrRemember(currentValue, v);
+          sndFanfare();
           var rep = repairValue(v);
-          showResult(rep.value, currentFormat, rep.note || "\ud83d\udcdc Numéro imprimé choisi manuellement (vérifie-le)", null, null);
+          showResult(rep.value, currentFormat, rep.note || "📜 Numéro imprimé choisi manuellement — 🎉 Merci de l’aide apportée ! (vérifie-le)", null, null);
         };
         row.appendChild(b);
       });
@@ -2072,18 +2074,37 @@ var tornFromImage = tornApi.fromImage;
         if (!ocrWorker) ocrWorker = await Tesseract.createWorker("fra+eng");
         const { data: { text } } = await ocrWorker.recognize(c);
         var flat = (text || "").replace(/\s+/g, " ");
-        var flatAll = flat.replace(/ /g, "");
         var cands = [];
         var push = function (x) { if (x && cands.indexOf(x) < 0 && cands.length < 12) cands.push(x); };
-        (flatAll.match(/\d{15,32}/g) || []).forEach(push); // numéros longs entiers (ex. 26 chiffres)
-        (flatAll.match(/\d{8,14}/g) || []).forEach(push);
-        (flat.match(/\d{8,14}/g) || []).forEach(push);
+        (flat.match(/\d{8,14}/g) || []).forEach(push); // numéros imprimés avec espaces internes
+        (text || "").split(/\r?\n/).forEach(function (ln) { // par LIGNE : ne jamais coller 2 lignes
+          var la = ln.replace(/\s+/g, "");
+          (la.match(/\d{15,32}/g) || []).forEach(push); // numéro long entier (ex. 26 chiffres)
+          (la.match(/\d{8,14}/g) || []).forEach(push);
+        });
         if (!cands.length) return null;
         var i, j;
         // 1) le code lu correspond EXACTEMENT au numéro imprimé (même long) -> confirmé
+        // V41b garde-fous : si ce numéro n'existe à l'impression qu'après COLLAGE des espaces
+        // (= 2 groupes imprimés séparés = 2 codes différents côte à côte), on ne confirme
+        // JAMAIS le numéro rabouté : 1er numéro retenu + l'autre proposé en bouton de choix.
+        var intact = [];
+        (flat.match(/\d{8,32}/g) || []).forEach(function (x) { if (intact.indexOf(x) < 0) intact.push(x); });
+        (text || "").split(/\r?\n/).forEach(function (ln) {
+          (ln.match(/\d{8,32}/g) || []).forEach(function (x) { if (intact.indexOf(x) < 0) intact.push(x); });
+        });
         for (i = 0; i < values.length; i++) {
           for (j = 0; j < cands.length; j++) {
-            if (values[i] === cands[j]) return { value: values[i], note: "\u2705 Confirmé par le numéro imprimé sous le code", alts: altList(cands, values[i]) };
+            if (values[i] !== cands[j]) continue;
+            if (intact.indexOf(values[i]) < 0) {
+              var groups = flat.match(/\d{8,20}/g) || [];
+              for (var g = 0; g + 1 < groups.length; g++) {
+                if (groups[g] + groups[g + 1] === values[i]) {
+                  return { value: groups[g], note: "\ud83d\udcc4 2 numéros imprimés c\u00f4te \u00e0 c\u00f4te (codes diff\u00e9rents) \u2014 1er num\u00e9ro retenu, l\u2019autre est propos\u00e9 en dessous (v\u00e9rifie ton choix)", alts: [groups[g + 1]].concat(altList(cands, groups[g])) };
+                }
+              }
+            }
+            return { value: values[i], note: "\u2705 Confirmé par le numéro imprimé sous le code", alts: altList(cands, values[i]) };
           }
         }
         // 2) morceau isolé : le code lu est CONTENU dans un numéro imprimé -> complété
@@ -2141,6 +2162,428 @@ var tornFromImage = tornApi.fromImage;
       }
       return a;
     }
+
+    // ====== V42 : SONS + MÉMOIRE DES CORRECTIONS + ORIENTATIONS ======
+    function sndCtx() {
+      try { return new (window.AudioContext || window.webkitAudioContext)(); } catch (_) { return null; }
+    }
+    function sndTone(f, t0, dur, ctx) {
+      try {
+        var o = ctx.createOscillator(), g = ctx.createGain();
+        o.type = "sine"; o.frequency.value = f;
+        var t = ctx.currentTime + t0;
+        g.gain.setValueAtTime(0.001, t);
+        g.gain.exponentialRampToValueAtTime(0.22, t + 0.02);
+        g.gain.exponentialRampToValueAtTime(0.001, t + dur);
+        o.connect(g); g.connect(ctx.destination);
+        o.start(t); o.stop(t + dur + 0.05);
+      } catch (_) {}
+    }
+    function sndBeep() { var c = sndCtx(); if (!c) return; sndTone(880, 0, 0.12, c); }
+    function sndBuzz() { var c = sndCtx(); if (!c) return; sndTone(196, 0, 0.25, c); sndTone(196, 0.28, 0.25, c); }
+    function sndFanfare() {
+      var c = sndCtx(); if (!c) return;
+      [523.25, 659.25, 783.99, 1046.5].forEach(function (f, i) { sndTone(f, i * 0.13, 0.24, c); });
+    }
+    // mémoire des corrections : l'app retient chaque correction validée et la réapplique
+    var CORR_KEY = "gscan-corr-memo";
+    function corrLoad() { try { return JSON.parse(localStorage.getItem(CORR_KEY) || "[]"); } catch (_) { return []; } }
+    function corrRemember(wrong, right) {
+      wrong = String(wrong || ""); right = String(right || "");
+      if (!wrong || !right || wrong === right) return;
+      var l = corrLoad();
+      for (var i = 0; i < l.length; i++) if (l[i].w === wrong) { l[i].r = right; try { localStorage.setItem(CORR_KEY, JSON.stringify(l)); } catch (_) {} return; }
+      l.push({ w: wrong, r: right });
+      if (l.length > 100) l.shift();
+      try { localStorage.setItem(CORR_KEY, JSON.stringify(l)); } catch (_) {}
+    }
+    function corrApply(v) {
+      v = String(v || "");
+      var l = corrLoad();
+      for (var i = 0; i < l.length; i++) if (l[i].w === v) return { value: l[i].r, learned: true };
+      return null;
+    }
+    // orientations : si la photo est tournée ou à l'envers, on réessaie 90/180/270
+    async function tryOrientations(c) {
+      var angles = [180, 90, 270];
+      for (var a = 0; a < angles.length; a++) {
+        try {
+          var rc = document.createElement("canvas");
+          rc.width = (angles[a] === 180) ? c.width : c.height;
+          rc.height = (angles[a] === 180) ? c.height : c.width;
+          var x = rc.getContext("2d");
+          x.translate(rc.width / 2, rc.height / 2);
+          x.rotate(angles[a] * Math.PI / 180);
+          x.drawImage(c, -c.width / 2, -c.height / 2);
+          if ("BarcodeDetector" in window) {
+            const det = new BarcodeDetector({ formats: LENS_FORMATS });
+            const codes = await det.detect(rc);
+            if (codes && codes[0] && codes[0].rawValue) return { code: codes[0], canvas: rc };
+          }
+        } catch (_) {}
+      }
+      return null;
+    }
+    function atelierFmt(v) {
+      v = String(v || "");
+      if (/^\d{13}$/.test(v)) return "ean_13";
+      if (/^\d{14}$/.test(v)) return "itf";
+      if (/^\d{12}$/.test(v)) return "upc_a";
+      if (/^\d{8}$/.test(v)) return "ean_8";
+      return "code_128";
+    }
+    // ====== V42 : ATELIER DE RECONSTRUCTION (page dédiée) ======
+    var atelierOpen = false;
+    function closeAtelier() {
+      var ov = document.getElementById("atelier-ov");
+      if (ov && ov.parentNode) ov.parentNode.removeChild(ov);
+      atelierOpen = false;
+    }
+    function atelierLayer(stage, dataUrl, label) {
+      var img = document.createElement("img");
+      img.src = dataUrl;
+      img.draggable = false;
+      img.style.cssText = "position:absolute;left:0;top:0;width:60%;border:2px solid #06b6d4;border-radius:8px;touch-action:none;user-select:none;-webkit-user-drag:none;cursor:grab;opacity:.96;";
+      var st = { x: 0, y: 0, s: 1, r: 0 };
+      function apply() {
+        img.style.transform = "translate(" + st.x + "px," + st.y + "px) scale(" + st.s + ") rotate(" + st.r + "deg)";
+        img.style.zIndex = st.z || 1;
+      }
+      apply();
+      var drag = null;
+      img.addEventListener("pointerdown", function (e) {
+        drag = { x: e.clientX, y: e.clientY, ox: st.x, oy: st.y };
+        st.z = 5; apply();
+        try { img.setPointerCapture(e.pointerId); } catch (_) {}
+        e.preventDefault();
+      });
+      img.addEventListener("pointermove", function (e) {
+        if (!drag) return;
+        st.x = drag.ox + (e.clientX - drag.x);
+        st.y = drag.oy + (e.clientY - drag.y);
+        apply();
+        e.preventDefault();
+      });
+      img.addEventListener("pointerup", function () { drag = null; st.z = 2; apply(); });
+      var tools = document.createElement("div");
+      tools.style.cssText = "display:flex;gap:6px;flex-wrap:wrap;margin:6px 0;";
+      function tb(txt, fn) {
+        var b = document.createElement("button");
+        b.type = "button"; b.textContent = txt; b.className = "btn sm";
+        b.onclick = fn; tools.appendChild(b); return b;
+      }
+      tb("🔍+ " + label, function () { st.s = Math.min(6, st.s * 1.25); apply(); });
+      tb("🔍−", function () { st.s = Math.max(0.3, st.s / 1.25); apply(); });
+      tb("↻ pivoter 90°", function () { st.r = (st.r + 90) % 360; apply(); });
+      tb("⟲ recentrer", function () { st.x = 0; st.y = 0; st.s = 1; apply(); });
+      return { img: img, tools: tools, st: st, apply: apply };
+    }
+    function openAtelier(canvas, guess, reason) {
+      closeAtelier();
+      atelierOpen = true;
+      var ov = document.createElement("div");
+      ov.id = "atelier-ov";
+      ov.style.cssText = "position:fixed;inset:0;z-index:9999;background:rgba(4,7,18,.97);overflow-y:auto;padding:14px;font-family:inherit;color:inherit;";
+      var h = document.createElement("div");
+      h.style.cssText = "display:flex;justify-content:space-between;align-items:center;gap:8px;";
+      var t = document.createElement("div");
+      t.style.cssText = "font-weight:800;font-size:1.05rem;";
+      t.textContent = "🧩 Atelier de reconstruction du code déchiré";
+      h.appendChild(t);
+      var close = document.createElement("button");
+      close.type = "button"; close.textContent = "✕"; close.className = "btn sm";
+      close.onclick = closeAtelier;
+      h.appendChild(close);
+      ov.appendChild(h);
+      var msg = document.createElement("div");
+      msg.style.cssText = "margin:10px 0;font-size:.92rem;line-height:1.45;";
+      msg.textContent = (reason || "⚠️ Je n'arrive pas à relier le code-barres et les numéros imprimés.") + " Aide-moi : fais glisser les 2 parties avec le doigt pour les rapprocher et les aligner (cadre de gauche = chiffres imprimés, cadre de droite = code-barres). Zoome pour être précis, corrige le numéro si besoin, puis valide.";
+      ov.appendChild(msg);
+      var stage = document.createElement("div");
+      stage.style.cssText = "position:relative;height:48vh;min-height:260px;overflow:hidden;border-radius:12px;background:repeating-conic-gradient(#101828 0% 25%, #0b1220 0% 50%) 50%/28px 28px;touch-action:none;";
+      var f1 = document.createElement("div");
+      f1.style.cssText = "position:absolute;left:3%;top:10%;width:36%;height:60%;border:2px dashed #22c55e;border-radius:10px;pointer-events:none;display:flex;align-items:flex-start;justify-content:center;";
+      var l1 = document.createElement("div");
+      l1.style.cssText = "background:#22c55e;color:#04140a;font-size:.72rem;padding:2px 8px;border-radius:0 0 8px 8px;font-weight:700;";
+      l1.textContent = "🔢 chiffres imprimés";
+      f1.appendChild(l1);
+      var f2 = document.createElement("div");
+      f2.style.cssText = "position:absolute;right:3%;top:10%;width:52%;height:60%;border:2px dashed #f59e0b;border-radius:10px;pointer-events:none;display:flex;align-items:flex-start;justify-content:center;";
+      var l2 = document.createElement("div");
+      l2.style.cssText = "background:#f59e0b;color:#241300;font-size:.72rem;padding:2px 8px;border-radius:0 0 8px 8px;font-weight:700;";
+      l2.textContent = "🏷️ code-barres";
+      f2.appendChild(l2);
+      ov.appendChild(stage);
+      var dataUrl = null;
+      try { dataUrl = canvas ? canvas.toDataURL("image/jpeg", 0.82) : null; } catch (_) {}
+      var L1 = atelierLayer(stage, dataUrl || "", "partie 1");
+      L1.img.style.left = "4%";
+      var L2 = atelierLayer(stage, dataUrl || "", "partie 2");
+      L2.img.style.left = "40%";
+      L2.img.style.top = "25%";
+      stage.appendChild(L1.img); stage.appendChild(f1); stage.appendChild(L2.img); stage.appendChild(f2);
+      var tip = document.createElement("div");
+      tip.style.cssText = "font-size:.82rem;margin:8px 0;";
+      tip.textContent = "Astuce : la 2ᵉ image est un exemplaire de la photo — fais-la glisser SUR la 1ʳᵉ pour aligner les 2 morceaux. Tu peux charger une autre photo pour l'un des morceaux :";
+      ov.appendChild(tip);
+      var LAYERS = [L1, L2];
+      var pick = document.createElement("select");
+      pick.style.cssText = "margin-right:8px;";
+      ["Image 1 (gauche)", "Image 2 (droite)"].forEach(function (x, i) {
+        var o = document.createElement("option"); o.value = i; o.textContent = x; pick.appendChild(o);
+      });
+      var upl = document.createElement("input");
+      upl.type = "file"; upl.accept = "image/*"; upl.style.display = "none";
+      var upb = document.createElement("button");
+      upb.type = "button"; upb.textContent = "📷 Remplacer l'image choisie"; upb.className = "btn sm";
+      upb.onclick = function () { upl.click(); };
+      upl.onchange = function (e) {
+        var f = upl.files && upl.files[0];
+        if (!f) return;
+        var rd = new FileReader();
+        rd.onload = function () { LAYERS[parseInt(pick.value, 10) || 0].img.src = rd.result; };
+        rd.readAsDataURL(f);
+        upl.value = "";
+      };
+      var row = document.createElement("div");
+      row.style.cssText = "display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:6px 0;";
+      row.appendChild(pick); row.appendChild(upb); row.appendChild(upl);
+      ov.appendChild(row);
+      var lbl = document.createElement("div");
+      lbl.style.cssText = "margin:12px 0 4px;font-weight:700;";
+      lbl.textContent = "📝 Numéro lu / corrigé (chiffres, lettres, caractères) :";
+      ov.appendChild(lbl);
+      var inp = document.createElement("input");
+      inp.type = "text"; inp.value = guess || ""; inp.placeholder = "tape ou corrige le numéro exact";
+      inp.style.cssText = "width:100%;box-sizing:border-box;padding:10px;border-radius:8px;font-size:1rem;";
+      ov.appendChild(inp);
+      var note = document.createElement("div");
+      note.style.cssText = "margin:8px 0;font-size:.85rem;min-height:1.2em;";
+      ov.appendChild(note);
+      function success(val, how) {
+        var old = String(guess || "");
+        closeAtelier();
+        corrRemember(old && old !== val ? old : foundWrong, val);
+        sndFanfare();
+        var rep = repairValue(val);
+        showResult(rep.value, atelierFmt(val), "🎉 Merci de l'aide apportée ! Code reconstruit grâce à toi" + (how ? " (" + how + ")" : "") + " — vérifie-le avant de l'utiliser.", null, canvas);
+      }
+      var foundWrong = String(guess || "");
+      var bCheck = document.createElement("button");
+      bCheck.type = "button"; bCheck.textContent = "🔍 Vérifier la concordance"; bCheck.className = "btn";
+      bCheck.onclick = function () {
+        var val = (inp.value || "").trim();
+        if (!val) { note.textContent = "⚠️ Tape d'abord le numéro."; return; }
+        var ok = null;
+        try {
+          if (typeof tornApi !== "undefined" && tornApi.matchImage) {
+            var sc = document.createElement("canvas");
+            sc.width = stage.clientWidth || 600; sc.height = stage.clientHeight || 400;
+            var sx = sc.getContext("2d");
+            sx.fillStyle = "#fff"; sx.fillRect(0, 0, sc.width, sc.height);
+            [L1, L2].forEach(function (L) {
+              try {
+                var im = L.img;
+                var r = im.getBoundingClientRect();
+                var sr = stage.getBoundingClientRect();
+                sx.drawImage(im, r.left - sr.left, r.top - sr.top, r.width, r.height);
+              } catch (_) {}
+            });
+            ok = tornApi.matchImage(sc, [val]);
+          }
+        } catch (_) {}
+        if (ok) { note.textContent = "✅ Concordance trouvée : les bandes visibles collent bien à ce numéro !"; sndBeep(); }
+        else { note.textContent = "⚠️ Concordance non prouvée — réaligne les images, zoome, ou corrige le numéro. Tu peux quand même valider si tu es sûr."; sndBuzz(); }
+      };
+      var bValid = document.createElement("button");
+      bValid.type = "button"; bValid.textContent = "✅ Valider et régénérer le code"; bValid.className = "btn";
+      bValid.style.marginLeft = "8px";
+      bValid.onclick = function () {
+        var val = (inp.value || "").trim();
+        if (!val) { note.textContent = "⚠️ Tape d'abord le numéro."; return; }
+        success(val, "validé par toi");
+      };
+      var brow = document.createElement("div");
+      brow.style.cssText = "display:flex;flex-wrap:wrap;gap:8px;margin:10px 0;";
+      brow.appendChild(bCheck); brow.appendChild(bValid);
+      ov.appendChild(brow);
+      document.body.appendChild(ov);
+    }
+    // ===== V43 : CONTRÔLE DE LA LONGUEUR DE CHAQUE BARRE (barGuard) =====
+    // Mesure la largeur (épaisseur) et l'écart de chaque barre, en déduit le module,
+    // et détecte un code-barres COUPÉ même quand le lecteur renvoie déjà une valeur :
+    // - "torn"   : 2 (ou 3) morceaux séparés d'un blanc trop large se complètent → reconstitution
+    // - "wide"   : la zone contient plus de barres que le code lu → morceaux de codes différents raccrochés
+    // - "partial": morceau seul avec motifs de garde visibles → code coupé, l'autre partie est à chercher à proximité
+    // Règle de sécurité : jamais de devinette — si la reconstitution est ambiguë, tornApi renvoie null.
+    var barGuard = (function () {
+      function grayData(c) {
+        var w = c.width, h = c.height;
+        if (!w || !h || w < 8 || h < 8) return null;
+        var sc = w > 1100 ? w / 1100 : 1;
+        if (h / sc > 1100) sc = h / 1100;
+        var W = Math.max(8, Math.round(w / sc)), H = Math.max(8, Math.round(h / sc));
+        var cv = document.createElement("canvas"); cv.width = W; cv.height = H;
+        var x = cv.getContext("2d");
+        try { x.drawImage(c, 0, 0, W, H); } catch (_) { return null; }
+        var d; try { d = x.getImageData(0, 0, W, H); } catch (_) { return null; }
+        if (!d || !d.data) return null;
+        var px = d.data, n = W * H, g = new Uint8Array(n), hist = [];
+        for (var i0 = 0; i0 < 256; i0++) hist.push(0);
+        for (var p = 0; p < n; p++) {
+          var q = p * 4, v = (px[q] * 299 + px[q + 1] * 587 + px[q + 2] * 114) / 1000;
+          if (v > 255) v = 255;
+          g[p] = v | 0; hist[g[p]]++;
+        }
+        var total = n, sum = 0, t;
+        for (t = 0; t < 256; t++) sum += t * hist[t];
+        var sumB = 0, wB = 0, bestv = -1, thr = 128;
+        for (t = 0; t < 256; t++) {
+          wB += hist[t]; if (!wB) continue;
+          var wF = total - wB; if (!wF) break;
+          sumB += t * hist[t];
+          var mB = sumB / wB, mF = (sum - sumB) / wF;
+          var between = wB * wF * (mB - mF) * (mB - mF);
+          if (between > bestv) { bestv = between; thr = t; }
+        }
+        var bin = new Uint8Array(n);
+        for (p = 0; p < n; p++) bin[p] = g[p] <= thr ? 1 : 0;
+        return { bin: bin, W: W, H: H };
+      }
+      function lineRuns(bd, line, horiz) {
+        var runs = [], cur = -1, len = 0, i, v;
+        var L = horiz ? bd.W : bd.H;
+        for (i = 0; i < L; i++) {
+          v = horiz ? bd.bin[line * bd.W + i] : bd.bin[i * bd.W + line];
+          if (v === cur) len++;
+          else { if (cur >= 0) runs.push({ c: cur, n: len }); cur = v; len = 1; }
+        }
+        if (cur >= 0) runs.push({ c: cur, n: len });
+        return runs;
+      }
+      function estimateMw(runs) {
+        var arr = [];
+        for (var i = 0; i < runs.length; i++) if (runs[i].n >= 1) arr.push(runs[i].n);
+        if (!arr.length) return 0;
+        arr.sort(function (a, b) { return a - b; });
+        var mw = arr[Math.floor(arr.length * 0.3)];
+        if (mw < 1) mw = arr[0];
+        return mw >= 1 ? mw : 0;
+      }
+      function fragments(runs, mw) {
+        var frags = [], cur = null, pos = 0;
+        for (var i = 0; i < runs.length; i++) {
+          var r = runs[i], m = Math.round(r.n / mw);
+          if (m < 1) m = 1;
+          if (r.c === 0 && m > 5) {
+            if (cur) { cur.end = pos; frags.push(cur); cur = null; }
+            pos += r.n;
+            continue;
+          }
+          if (!cur) cur = { mods: 0, seq: "", start: pos, px: 0 };
+          cur.mods += m;
+          cur.px += r.n;
+          for (var k = 0; k < m; k++) cur.seq += r.c ? "1" : "0";
+          pos += r.n;
+        }
+        if (cur) { cur.end = pos; frags.push(cur); }
+        return frags;
+      }
+      function bestScan(bd) {
+        var best = null;
+        var fr = [0.3, 0.4, 0.5, 0.6, 0.7];
+        for (var o = 0; o < 2; o++) {
+          var horiz = o === 0;
+          var OL = horiz ? bd.H : bd.W;
+          for (var k = 0; k < fr.length; k++) {
+            var line = Math.min(OL - 1, Math.max(0, Math.floor(OL * fr[k])));
+            var runs = lineRuns(bd, line, horiz);
+            var trans = 0;
+            for (var i = 0; i < runs.length; i++) if (runs[i].n <= 6) trans++;
+            if (trans >= 8 && (!best || trans > best.trans)) best = { runs: runs, horiz: horiz, line: line, trans: trans };
+          }
+        }
+        return best;
+      }
+      function expectedMods(value, format) {
+        var f = String(format || "").toLowerCase();
+        var v = String(value || "");
+        var dg = v.replace(/[^0-9]/g, "");
+        if (f === "ean_13" || f === "ean13" || (!f && /^\d{13}$/.test(v))) return 95;
+        if (f === "ean_8" || f === "ean8" || (!f && /^\d{8}$/.test(v))) return 67;
+        if (f === "upc_a" || f === "upc-a" || (!f && /^\d{12}$/.test(v))) return 95;
+        if (f === "upc_e" || f === "upc-e") return 51;
+        if (f === "itf" || f === "itf_14" || f === "interleaved_2_of_5") {
+          if (!dg.length) return 0;
+          if (dg.length % 2) dg = "0" + dg;
+          return 4 + (dg.length / 2) * 10 + 8;
+        }
+        if (f === "code_128" || f === "code128") return 11 * (v.length + 2) + 13;
+        return 0;
+      }
+      function cutCheck(c, value, format, cornerPoints) {
+        var exp = expectedMods(value, format);
+        if (!exp) return null;
+        var bd = grayData(c);
+        if (!bd) return null;
+        var bs = bestScan(bd);
+        if (!bs) return null;
+        var mw = estimateMw(bs.runs);
+        if (!mw) return null;
+        var frags = fragments(bs.runs, mw);
+        var pl = [];
+        for (var i = 0; i < frags.length; i++) {
+          if (frags[i].mods >= 14 && frags[i].mods <= exp * 2 + 30) pl.push(frags[i]);
+        }
+        if (!pl.length) return null;
+        var sel = pl;
+        if (cornerPoints && cornerPoints.length >= 4) {
+          var sx = c.width / bd.W, sy = c.height / bd.H;
+          var xs = [], ys = [];
+          for (i = 0; i < cornerPoints.length; i++) {
+            if (cornerPoints[i] && typeof cornerPoints[i].x === "number") { xs.push(cornerPoints[i].x / sx); ys.push(cornerPoints[i].y / sy); }
+          }
+          if (xs.length >= 4) {
+            var bx0 = Math.min.apply(null, xs) - 8, bx1 = Math.max.apply(null, xs) + 8;
+            var by0 = Math.min.apply(null, ys) - 8, by1 = Math.max.apply(null, ys) + 8;
+            var inb = [];
+            for (i = 0; i < pl.length; i++) {
+              var ctr = pl[i].start + pl[i].px / 2;
+              var fx = bs.horiz ? ctr : bs.line;
+              var fy = bs.horiz ? bs.line : ctr;
+              if (fx >= bx0 && fx <= bx1 && fy >= by0 && fy <= by1) inb.push(pl[i]);
+            }
+            if (inb.length) sel = inb;
+          }
+        }
+        var tot = 0;
+        for (i = 0; i < sel.length; i++) tot += sel[i].mods;
+        if (sel.length === 1) {
+          var m1 = sel[0].mods;
+          if (m1 >= exp - 12 && m1 <= exp + 12) return { cut: null, mw: mw, mods: m1, exp: exp };
+          if (m1 > exp + 16) return { cut: "wide", mw: mw, mods: m1, exp: exp };
+          if (m1 <= exp - 18) {
+            var s = sel[0].seq.replace(/^0+/, "").replace(/0+$/, "");
+            if (s.indexOf("101") === 0 || s.slice(-3) === "101" || s.slice(-3) === "010") return { cut: "partial", mw: mw, mods: m1, exp: exp };
+          }
+          return null;
+        }
+        if (sel.length >= 2) {
+          if (tot >= exp - 24 && tot <= exp + 24) return { cut: "torn", mw: mw, mods: tot, exp: exp };
+          var i2, j2, pr = 0;
+          for (i2 = 0; i2 < sel.length && !pr; i2++) {
+            for (j2 = i2 + 1; j2 < sel.length && !pr; j2++) {
+              var sm = sel[i2].mods + sel[j2].mods;
+              if (sm >= exp - 24 && sm <= exp + 24) pr = sm;
+            }
+          }
+          if (pr) return { cut: "torn", mw: mw, mods: pr, exp: exp };
+          if (tot > exp + 24) return { cut: "wide", mw: mw, mods: tot, exp: exp };
+        }
+        return null;
+      }
+      return { cutCheck: cutCheck, expectedMods: expectedMods };
+    })();
 
     async function fusionRepair(c) {
       if (fusionBusy) return false;
@@ -2322,8 +2765,13 @@ var tornFromImage = tornApi.fromImage;
           if (voted) finalVal = voted;
         }
 
-        const repaired = repairValue(finalVal);
+        var memC = corrApply(finalVal);
+        const repaired = repairValue(memC ? memC.value : finalVal);
         const chk = checkValue(repaired.value, found.format);
+        var cutCam = null;
+        try {
+          if ((found.format || "") !== "qr_code" && (found.format || "") !== "data_matrix" && (found.format || "") !== "pdf417" && (found.format || "") !== "aztec") cutCam = barGuard.cutCheck(c, repaired.value, found.format, found.cornerPoints);
+        } catch (_) {}
 
         // flash auto
         if ($("flash-auto").checked && torchTrack && !torchOn) {
@@ -2336,7 +2784,20 @@ var tornFromImage = tornApi.fromImage;
         // en mode unique on s'arrête
         if (scanMode === "single") {
           stopCamera();
-          if ((found.format || "") !== "qr_code" && (found.format || "") !== "data_matrix" && suspectRead(repaired.value, found.format) && !crossBusy) {
+          if (cutCam && cutCam.cut === "torn") {
+            var trCm = null;
+            try { trCm = tornFromImage(c); } catch (_) {}
+            if (trCm && trCm.value) {
+              var repCm = repairValue(trCm.value);
+              var fmtCm = trCm.format === "EAN13" ? "ean_13" : "code_128";
+              sndBeep();
+              tornAnimate(trCm, function () {
+                showResult(repCm.value, fmtCm, repCm.note || "\u2702\u{1F527} Code coup\u00e9 d\u00e9tect\u00e9 par le contr\u00f4le des barres \u2014 reconstitu\u00e9 depuis les morceaux proches (cl\u00e9 v\u00e9rifi\u00e9e)", checkValue(repCm.value, fmtCm), c);
+              });
+              return;
+            }
+          }
+          if ((found.format || "") !== "qr_code" && (found.format || "") !== "data_matrix" && (suspectRead(repaired.value, found.format) || (cutCam && cutCam.cut)) && !crossBusy) {
             // V40 : lecture douteuse (morceaux raccrochés) — vérification OCR avant d'afficher
             crossBusy = true;
             try { $("vf-hint").textContent = "🛠🔟 Vérification du numéro imprimé…"; } catch (_) {}
@@ -2347,11 +2808,14 @@ var tornFromImage = tornApi.fromImage;
               var repC = repairValue(pcCam.value);
               showResult(repC.value, found.format || "unknown", repC.note || pcCam.note, checkValue(repC.value, found.format), c);
               if (pcCam.alts && pcCam.alts.length) showAltChips(pcCam.alts);
+              corrRemember(repaired.value, pcCam.value);
+              sndBeep();
             } else {
               showResult(repaired.value, found.format || "unknown", "⚠📝 Lecture douteuse (morceaux raccrochés) — cadre un seul code, ou vérifie le numéro", chk, c);
             }
           } else {
-            showResult(repaired.value, found.format || "unknown", repaired.note, chk, c);
+            showResult(repaired.value, found.format || "unknown", repaired.note || (memC ? "🧠 Corrigé automatiquement — appris de ta correction précédente (vérifie-le)" : repaired.note), chk, c);
+            sndBeep();
           }
         } else if (scanMode === "batch") {
           addToBatch(repaired.value, found.format);
@@ -2361,7 +2825,7 @@ var tornFromImage = tornApi.fromImage;
           setTimeout(() => { if (scanning) $("vf-hint").textContent = "Cadre le prochain code"; }, 1200);
         } else {
           // continuous
-          showResult(repaired.value, found.format || "unknown", suspectRead(repaired.value, found.format) ? "⚠📝 Lecture douteuse (morceaux raccrochés) — cadre un seul code" : repaired.note, chk, c);
+          showResult(repaired.value, found.format || "unknown", (suspectRead(repaired.value, found.format) || (cutCam && cutCam.cut)) ? "⚠📝 Lecture douteuse (morceaux raccrochés) — cadre un seul code" : repaired.note, chk, c);
           lastDetections = [];
           setTimeout(() => {
             if (scanning) {
@@ -3107,10 +3571,28 @@ var tornFromImage = tornApi.fromImage;
         if (found) {
           var is1D = found.format !== "qr_code" && found.format !== "data_matrix" && found.format !== "pdf417" && found.format !== "aztec";
           var stitched = is1D && suspectRead(found.rawValue, found.format);
+          var cutInfo = null;
+          if (is1D) { try { cutInfo = barGuard.cutCheck(c, found.rawValue, found.format, found.cornerPoints); } catch (_) {} }
+          if (cutInfo && cutInfo.cut === "torn") {
+            var trCut = null;
+            try { trCut = tornFromImage(c); } catch (_) {}
+            if (trCut && trCut.value) {
+              var repCt = repairValue(trCut.value);
+              var fmtCt = trCut.format === "EAN13" ? "ean_13" : "code_128";
+              sndBeep();
+              tornAnimate(trCut, function () {
+                showResult(repCt.value, fmtCt, repCt.note || "\u2702\u{1F527} Code coup\u00e9 d\u00e9tect\u00e9 par le contr\u00f4le des barres \u2014 reconstitu\u00e9 depuis les 2 morceaux proches (\u00e9paisseur et \u00e9cart des barres analys\u00e9s, cl\u00e9 v\u00e9rifi\u00e9e)", checkValue(repCt.value, fmtCt), c);
+              });
+              return;
+            }
+          }
+          if (cutInfo && cutInfo.cut) stitched = true;
           var multi = allVals.length >= 2;
           if (!stitched && !multi) {
-            const repaired = repairValue(found.rawValue);
-            showResult(repaired.value, found.format, repaired.note || "📷 depuis photo", checkValue(repaired.value), c);
+            var mem = corrApply(found.rawValue);
+            var repF = repairValue(mem ? mem.value : found.rawValue);
+            showResult(repF.value, found.format, repF.note || (mem ? "🧠 Corrigé automatiquement — appris de ta correction précédente (vérifie-le)" : "📷 depuis photo"), checkValue(repF.value), c);
+            sndBeep();
           } else {
             // V40 : feuille découpée / plusieurs codes — croisement avec le numéro imprimé
             var pc = null;
@@ -3127,13 +3609,24 @@ var tornFromImage = tornApi.fromImage;
               var repP = repairValue(pc.value);
               showResult(repP.value, found.format, repP.note || pc.note, checkValue(repP.value, found.format), c);
               if (pc.alts && pc.alts.length) showAltChips(pc.alts);
+              corrRemember(found.rawValue, repP.value);
+              sndBeep();
             } else {
               const repaired = repairValue(found.rawValue);
               var warn40 = (multi ? "📄 Plusieurs codes-barres sur la photo" : "⚠📝 Lecture douteuse (morceaux de codes raccrochés)") + " — vérifie le numéro, ou cadre un seul code à la fois";
               showResult(repaired.value, found.format, warn40, checkValue(repaired.value), c);
+              sndBuzz();
+              openAtelier(c, found.rawValue, "⚠️ Je n’arrive pas à relier le code-barres et les numéros imprimés (morceaux de codes différents ou feuille découpée).");
             }
           }
         } else {
+          var ori = null;
+          try { ori = await tryOrientations(c); } catch (_) {}
+          if (ori && ori.code) {
+            var repO = repairValue(ori.code.rawValue);
+            showResult(repO.value, ori.code.format, repO.note || "📷 depuis photo — image retournée automatiquement (elle était à l’envers)", checkValue(repO.value), ori.canvas);
+            sndBeep();
+          } else {
           var tr = null;
           try { tr = tornFromImage(c); } catch (_) {}
           if (tr && tr.value) {
@@ -3149,7 +3642,10 @@ var tornFromImage = tornApi.fromImage;
             if (!okFusion) {
               toast("Aucun code détecté — essaie OCR ou rapproche");
               $("ocr-status").style.display = "block";
+              sndBuzz();
+              openAtelier(c, "", "Aucun code détecté automatiquement (même en retournant l’image).");
             }
+          }
           }
 }
       };
@@ -3157,6 +3653,13 @@ var tornFromImage = tornApi.fromImage;
     }
 
     // OCR / IA multi-fournisseurs / NFC
+    try {
+      var atBtn = document.createElement("button");
+      atBtn.type = "button"; atBtn.className = "btn"; atBtn.style.marginTop = "8px";
+      atBtn.textContent = "🧩 Atelier reconstruction (code déchiré)";
+      atBtn.onclick = function () { openAtelier(lastImageData, currentValue || "", "Atelier manuel : rapproche les 2 parties du code déchiré avec le doigt, zoome, corrige le numéro puis valide."); };
+      $("ocr-btn").parentNode.insertBefore(atBtn, $("ocr-btn"));
+    } catch (_) {}
     $("ocr-btn").onclick = () => runOCR(false);
     $("ocr-free-btn").onclick = () => runOCR(true);
     $("hist-export-btn").onclick = exportHistory;
